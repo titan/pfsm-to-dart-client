@@ -1,0 +1,2 @@
+NAME=pfsm-to-dart-client
+BUILDDIR=/dev/shm/$(NAME-LINK)
