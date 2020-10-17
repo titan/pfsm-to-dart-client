@@ -15,14 +15,23 @@ import Pfsm.Checker
 import Pfsm.Data
 import Pfsm.Parser
 
+indentDelta : Nat
+indentDelta = 2
+
 record AppConfig where
   constructor MkAppConfig
   src : String
   model : Bool
   library : Bool
+  participant : String
 
-indentDelta : Nat
-indentDelta = 2
+Show AppConfig where
+  show (MkAppConfig src model library participant)
+    = List.join "\n" [ "src: " ++ src
+                     , "model: " ++ (show model)
+                     , "library: " ++ (show library)
+                     , "participant: " ++ participant
+                     ]
 
 dartKeywords : List String
 dartKeywords = [ "abstract"
@@ -142,12 +151,14 @@ toDart conf fsm
         pre = (camelize . toDartName) name in
         if conf.model
            then putStrLn $ generateModel pre name fsm
-           else putStrLn $ generateClient pre name fsm
+           else putStrLn $ generateClient pre name conf.participant fsm
   where
     generateModel : String -> String -> Fsm -> String
     generateModel pre name fsm
-      = let rks = liftRecords fsm.model in
-            join "\n\n" $ List.filter nonblank [ join "\n\n" $ List.filter nonblank $ map (\x =>
+      = let refs = liftReferences fsm.model
+            rks = liftRecords fsm.model in
+            join "\n\n" $ List.filter nonblank [ List.join "\n" $ map (\x => "import '../" ++ x ++ "/model.dart';") refs
+                                               , join "\n\n" $ List.filter nonblank $ map (\x =>
                                                                                         case x of
                                                                                              (TRecord n ps) => generateClass (camelize n) (("fsmid", (TPrimType PTULong), Nothing):: ps)
                                                                                              _ => "") rks
@@ -155,8 +166,10 @@ toDart conf fsm
                                                ]
       where
         generateParameter : Nat -> Parameter -> String
-        generateParameter idt (n, t, _)
-          = (indent idt) ++ "final " ++ (toDartType t) ++ " " ++ (toDartName n) ++ ";"
+        generateParameter idt (n, t, ms)
+          = case lookup "reference" ms of
+                 Just (MVString ref) => (indent idt) ++ "final " ++ (camelize ref) ++ " " ++ (toDartName n) ++ ";"
+                 _ => (indent idt) ++ "final " ++ (toDartType t) ++ " " ++ (toDartName n) ++ ";"
 
         generateClass : Name -> List Parameter -> String
         generateClass pre params
@@ -171,25 +184,66 @@ toDart conf fsm
             generateToJson idt params
               = List.join "\n" [ (indent idt) ++ "Map<String, dynamic> toJson() {"
                                , (indent (idt + indentDelta)) ++ "return {"
-                               , List.join "\n" $ map (\(n, t, _) => (indent (idt + (indentDelta * 2))) ++ "'" ++ n ++ "': " ++ (toDartJson n t) ++ ",") params
+                               , List.join "\n" $ map (\(n, t, ms) =>
+                                                    case lookup "reference" ms of
+                                                         Just (MVString ref) => (indent (idt + (indentDelta * 2))) ++ "'" ++ n ++ "': " ++ n ++ ".toJson(),"
+                                                         _ => (indent (idt + (indentDelta * 2))) ++ "'" ++ n ++ "': " ++ (toDartJson n t) ++ ",") params
                                , (indent (idt + indentDelta)) ++ "};"
                                , (indent idt) ++ "}"
                                ]
 
-    generateClient : String -> String -> Fsm -> String
-    generateClient pre name fsm
-      = join "\n\n" $ List.filter nonblank [ generateImports
-                                           , generateFetchLists pre name fsm.model fsm.states
-                                           , generateEvents pre name fsm.events
-                                           ]
+    generateClient : String -> String -> String -> Fsm -> String
+    generateClient pre name participant fsm
+      = let refs = liftReferences fsm.model
+            events = liftEventsByParticipantFromTransitions participant fsm.transitions in
+            join "\n\n" $ List.filter nonblank [ generateImports refs
+                                               , generateFromJson pre name fsm.model
+                                               , generateFetchLists pre name fsm.model fsm.states
+                                               , generateEvents pre name events
+                                               ]
       where
-        generateImports : String
-        generateImports
+        liftEventsByParticipantFromTriggers : String -> List1 Trigger -> List Event
+        liftEventsByParticipantFromTriggers participant triggers
+          = foldl (\acc, (MkTrigger ps evt _ _) =>
+              if elemBy (==) participant $ map (\(MkParticipant n _) => n) ps
+                 then evt :: acc
+                 else acc) [] triggers
+
+        liftEventsByParticipantFromTransitions : String -> List1 Transition -> List Event
+        liftEventsByParticipantFromTransitions participant transitions
+          = foldl (\acc, x => acc ++ (liftEventsByParticipantFromTriggers participant x.triggers)) [] transitions
+
+        generateImports : List String -> String
+        generateImports refs
           = List.join "\n" [ "import 'dart:convert';"
                            , "import 'package:crypto/crypto.dart';"
                            , "import 'package:http/http.dart' as http;"
                            , "import 'package:intl/intl.dart';"
+                           , "import '../api-helper.dart';"
+                           , "import 'model.dart';"
+                           , List.join "\n" $ map (\x => "import '../" ++ x ++ "/model.dart';") refs
+                           , List.join "\n" $ map (\x => "import '../" ++ x ++ "/api.dart';") refs
                            ]
+
+        generateFromJson : String -> String -> List Parameter -> String
+        generateFromJson pre name model
+          = List.join "\n" [ pre ++ " get" ++ pre ++ "FromJson(Map<String, dynamic> node) {"
+                           , (indent indentDelta) ++ "var fsmid = int.parse(node['fsmid']);"
+                           , List.join "\n" $ map (generateParsingFromJson indentDelta) model
+                           , (indent indentDelta) ++ "var " ++ (toDartName name) ++ " = " ++ pre ++ "(" ++ (List.join ", " $ map generateInitialingObject (("fsmid", (TPrimType PTString) , Nothing) :: model)) ++ ");"
+                           , (indent indentDelta) ++ "return " ++ (toDartName name) ++ ";"
+                           , "}"
+                           ]
+          where
+            generateParsingFromJson : Nat -> Parameter -> String
+            generateParsingFromJson idt (n, t, ms)
+              = case lookup "reference" ms of
+                     Just (MVString ref) => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "get" ++ (camelize ref) ++ "FromJson(node['" ++ n ++ "']);"
+                     _ => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "node['" ++ n ++ "'];"
+
+            generateInitialingObject : Parameter -> String
+            generateInitialingObject (n, _, _)
+              = (toDartName n)
 
         generateFetchLists : String -> String -> List Parameter -> List1 State -> String
         generateFetchLists pre name model states
@@ -220,9 +274,7 @@ toDart conf fsm
                                    , (indent (indentDelta * 2)) ++ "if (code == 200) {"
                                    , (indent (indentDelta * 3)) ++ "var data = [];"
                                    , (indent (indentDelta * 3)) ++ "for (var e in payload['data']) {"
-                                   , (indent (indentDelta * 4)) ++ "var fsmid = int.parse(e['fsmid']);"
-                                   , List.join "\n" $ map (generateParsingFromJson (indentDelta * 4)) model
-                                   , (indent (indentDelta * 4)) ++ "var " ++ (toDartName name) ++ " = " ++ pre ++ "(" ++ (List.join ", " $ map generateInitialingObject (("fsmid", (TPrimType PTString) , Nothing) :: model)) ++ ");"
+                                   , (indent (indentDelta * 4)) ++ "var " ++ (toDartName name) ++ " = get" ++ pre ++ "FromJson(e);"
                                    , (indent (indentDelta * 4)) ++ "data.add(" ++ (toDartName name) ++ ");"
                                    , (indent (indentDelta * 3)) ++ "}"
                                    , (indent (indentDelta * 3)) ++ "var pagination = payload['pagination'];"
@@ -235,16 +287,8 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "}"
                                    , "}"
                                    ]
-              where
-                generateParsingFromJson : Nat -> Parameter -> String
-                generateParsingFromJson idt (n, t, _)
-                  = (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "e['" ++ n ++ "'];"
 
-                generateInitialingObject : Parameter -> String
-                generateInitialingObject (n, _, _)
-                  = (toDartName n)
-
-        generateEvents : String -> String -> List1 Event -> String
+        generateEvents : String -> String -> List Event -> String
         generateEvents pre name evts
           = join "\n\n" $ map (generateEvent pre name) evts
           where
@@ -334,42 +378,37 @@ generateLibrary
                        , "}"
                        ]
 
-loadFsm : String -> Either String Fsm
-loadFsm src
-  = do (sexp, _) <- mapError parseErrorToString $ parseSExp src
-       (fsm, _) <- mapError parseErrorToString $ analyse sexp
-       fsm' <- mapError checkersErrorToString $ check fsm defaultCheckingRules
-       pure fsm'
-
 doWork : AppConfig -> IO ()
 doWork conf
   = if conf.library
        then putStrLn $ generateLibrary
-       else do Right content <- readFile conf.src
-               | Left err => putStrLn $ show err
-               case loadFsm content of
-                    Left e => putStrLn e
-                    Right fsm => toDart conf fsm
+       else do Right fsm <- loadFsmFromFile conf.src
+               | Left err => putStrLn err
+               toDart conf fsm
 
 parseArgs : List String -> Maybe AppConfig
 parseArgs
-  = parseArgs' Nothing False False
+  = parseArgs' Nothing False False Nothing
   where
-    parseArgs' : Maybe String -> Bool -> Bool -> List String -> Maybe AppConfig
-    parseArgs' _          _     True    []                  = Just (MkAppConfig "" False True)
-    parseArgs' Nothing    _     False   []                  = Nothing
-    parseArgs' (Just src) model library []                  = Just (MkAppConfig src model library)
-    parseArgs' src        _     library ("--model" :: xs)   = parseArgs' src True library xs
-    parseArgs' src        model _       ("--library" :: xs) = parseArgs' src model True xs
-    parseArgs' _          model library (x :: xs)           = parseArgs' (Just x) model library xs
+    parseArgs' : Maybe String -> Bool -> Bool -> Maybe String -> List String -> Maybe AppConfig
+    parseArgs' _          _     True    _                  []                  = Just (MkAppConfig "" False True "")
+    parseArgs' Nothing    _     False   _                  []                  = Nothing
+    parseArgs' (Just src) True  _       Nothing            []                  = Just (MkAppConfig src True False "")
+    parseArgs' (Just _)   False _       Nothing            []                  = Nothing
+    parseArgs' (Just src) model library (Just participant) []                  = Just (MkAppConfig src model library participant)
+    parseArgs' src        _     library participant        ("--model" :: xs)   = parseArgs' src True library participant xs
+    parseArgs' src        model _       participant        ("--library" :: xs) = parseArgs' src model True participant xs
+    parseArgs' src        model library _                  ("-p" :: x :: xs)   = parseArgs' src model library (Just x) xs
+    parseArgs' _          model library participant        (x :: xs)           = parseArgs' (Just x) model library participant xs
 
 usage : String
 usage
   = List.join "\n" [ "Usage: pfsm-to-dart-client [options] <src>"
                    , ""
                    , "Options:"
-                   , "  --model      Just generate data model.[default: false]."
-                   , "  --library    Just generate code of supporting library.[default: false]."
+                   , "  --model         Just generate data model.[default: false]."
+                   , "  --library       Just generate code of supporting library.[default: false]."
+                   , "  -p <particpant> Specify the participant to call APIs."
                    ]
 
 main : IO ()
