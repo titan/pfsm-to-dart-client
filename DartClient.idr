@@ -145,6 +145,11 @@ toDartJson n (TDict _ _)   = n ++ ".toJson()"
 toDartJson n (TRecord _ _) = n ++ ".toJson()"
 toDartJson n (TArrow _ _)  = n ++ ".toJson()"
 
+fromJson : String -> Tipe -> String
+fromJson src (TList t)     = src ++ ".map((i) => " ++ (fromJson "i" t) ++ ").toList()"
+fromJson src (TRecord n _) = "get" ++ (camelize n) ++ "FromJson(" ++ src ++ ")"
+fromJson src _             = src
+
 toDart : AppConfig -> Fsm -> IO ()
 toDart conf fsm
   = let name = fsm.name
@@ -195,8 +200,10 @@ toDart conf fsm
     generateClient : String -> String -> String -> Fsm -> String
     generateClient pre name participant fsm
       = let refs = liftReferences fsm.model
+            rks = liftRecords fsm.model
             events = liftEventsByParticipantFromTransitions participant fsm.transitions in
             join "\n\n" $ List.filter nonblank [ generateImports refs
+                                               , generateRecordsFromJson pre name rks
                                                , generateFromJson pre name fsm.model
                                                , generateFetchLists pre name fsm.model fsm.states
                                                , generateEvents pre name events
@@ -239,11 +246,36 @@ toDart conf fsm
             generateParsingFromJson idt (n, t, ms)
               = case lookup "reference" ms of
                      Just (MVString ref) => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "get" ++ (camelize ref) ++ "FromJson(node['" ++ n ++ "']);"
-                     _ => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "node['" ++ n ++ "'];"
+                     _ => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
 
             generateInitialingObject : Parameter -> String
             generateInitialingObject (n, _, _)
               = (toDartName n)
+
+        generateRecordsFromJson : String -> String -> List Tipe -> String
+        generateRecordsFromJson pre name rks
+          = List.join "\n\n" $ map (generateRecordFromJson pre name) rks
+          where
+            generateRecordFromJson : String -> String -> Tipe -> String
+            generateRecordFromJson pre name (TRecord n ps)
+              = List.join "\n" [ (camelize n) ++ " get" ++ (camelize n) ++ "FromJson(Map<String, dynamic> node) {"
+                               , List.join "\n" $ map (generateParsingFromJson indentDelta) ps
+                               , (indent indentDelta) ++ "var " ++ (toDartName n) ++ " = " ++ pre ++ "(" ++ (List.join ", " $ map generateInitialingObject ps) ++ ");"
+                               , (indent indentDelta) ++ "return " ++ (toDartName n) ++ ";"
+                               , "}"
+                               ]
+              where
+                generateParsingFromJson : Nat -> Parameter -> String
+                generateParsingFromJson idt (n, t, ms)
+                  = case lookup "reference" ms of
+                         Just (MVString ref) => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "get" ++ (camelize ref) ++ "FromJson(node['" ++ n ++ "']);"
+                         _ => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "node['" ++ n ++ "'];"
+
+                generateInitialingObject : Parameter -> String
+                generateInitialingObject (n, _, _)
+                  = (toDartName n)
+
+            generateRecordFromJson pre name _ = ""
 
         generateFetchLists : String -> String -> List Parameter -> List1 State -> String
         generateFetchLists pre name model states
