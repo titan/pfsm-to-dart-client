@@ -325,11 +325,21 @@ toDart conf fsm
           = join "\n\n" $ map (generateEvent pre name) evts
           where
             generateEvent : String -> String -> Event -> String
-            generateEvent pre name (MkEvent ename params metas)
-              = let isCreator = (MVString "true") == (fromMaybe (MVString "false") $ lookup "creator" metas)
-                    returnType = if isCreator then "int" else "bool"
-                    path = if isCreator then ("/" ++ name ++ "/" ++ ename) else ("/" ++ name ++ "/${fsmid}/" ++ ename)
-                    params' = if isCreator then params else (("fsmid", (TPrimType PTULong) , Nothing) :: (the (List Parameter) params)) in
+            generateEvent pre name evt@(MkEvent ename params metas)
+              = let fsmIdStyle = fsmIdStyleOfEvent evt
+                    returnType = case fsmIdStyle of
+                                      FsmIdStyleGenerate => "int"
+                                      _ => "bool"
+                    params' = case fsmIdStyle of
+                                   FsmIdStyleGenerate => params
+                                   _ => ("fsmid", (TPrimType PTULong), Nothing) :: params
+                    path = case fsmIdStyle of
+                                FsmIdStyleGenerate => "/" ++ name ++ "/" ++ ename
+                                _ => "/" ++ name ++ "/${fsmid}/" ++ ename
+                    return = case fsmIdStyle of
+                                  FsmIdStyleGenerate => "return respbody['payload'];"
+                                  _ => "return respbody['payload'] == 'Okay';"
+                    in
                     List.join "\n" [ "Future<" ++ returnType ++ "> " ++ (toDartName ename) ++ "(Caller self, " ++ (generateParametersSignature params') ++ ") async {"
                                    , (indent (indentDelta * 1)) ++ "var body = json.encode({" ++ (List.join ", " (map (\(n, t, _) => "'" ++ n ++ "': " ++ (toDartJson n t)) params)) ++ "});"
                                    , (indent (indentDelta * 1)) ++ "var signbody = '" ++ (List.join "&" $ map generateSignatureBody $ sortBy (\(a, _, _), (b, _, _) => compare a b) params) ++ "';"
@@ -349,7 +359,7 @@ toDart conf fsm
                                    , (indent (indentDelta * 2)) ++ "var respbody = jsonDecode(response.body);"
                                    , (indent (indentDelta * 2)) ++ "final int code = respbody['code'];"
                                    , (indent (indentDelta * 2)) ++ "if (code == 200) {"
-                                   , (indent (indentDelta * 3)) ++ (if isCreator then "return respbody['payload'];" else "return respbody['payload'] == 'Okay';")
+                                   , (indent (indentDelta * 3)) ++ return
                                    , (indent (indentDelta * 2)) ++ "} else {"
                                    , (indent (indentDelta * 3)) ++ "throw ApiException(code, respbody['payload']);"
                                    , (indent (indentDelta * 2)) ++ "}"
