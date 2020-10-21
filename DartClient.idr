@@ -138,12 +138,13 @@ toDartType (TRecord n _)                         = camelize n
 toDartType (TArrow _ _)                          = "Function"
 
 toDartJson : Name -> Tipe -> String
-toDartJson n TUnit         = "void"
-toDartJson n (TPrimType _) = n
-toDartJson n (TList _)     = n ++ ".map((i) => i.toJson()).toList()"
-toDartJson n (TDict _ _)   = n ++ ".toJson()"
-toDartJson n (TRecord _ _) = n ++ ".toJson()"
-toDartJson n (TArrow _ _)  = n ++ ".toJson()"
+toDartJson n TUnit                 = "void"
+toDartJson n (TPrimType _)         = (toDartName n)
+toDartJson n (TList (TPrimType _)) = (toDartName n) ++ ".map((i) => i).toList()"
+toDartJson n (TList _)             = (toDartName n) ++ ".map((i) => i.toJson()).toList()"
+toDartJson n (TDict _ _)           = (toDartName n)
+toDartJson n (TRecord _ _)         = (toDartName n) ++ ".toJson()"
+toDartJson n (TArrow _ _)          = (toDartName n) ++ ".toJson()"
 
 fromJson : String -> Tipe -> String
 fromJson src (TList t)     = src ++ ".map((i) => " ++ (fromJson "i" t) ++ ").toList()"
@@ -165,7 +166,7 @@ toDart conf fsm
             join "\n\n" $ List.filter nonblank [ List.join "\n" $ map (\x => "import '../" ++ x ++ "/model.dart';") refs
                                                , join "\n\n" $ List.filter nonblank $ map (\x =>
                                                                                         case x of
-                                                                                             (TRecord n ps) => generateClass (camelize n) (("fsmid", (TPrimType PTULong), Nothing):: ps)
+                                                                                             (TRecord n ps) => generateClass (camelize n) ps
                                                                                              _ => "") rks
                                                , generateClass pre (("fsmid", (TPrimType PTULong), Nothing) :: fsm.model)
                                                ]
@@ -191,7 +192,7 @@ toDart conf fsm
                                , (indent (idt + indentDelta)) ++ "return {"
                                , List.join "\n" $ map (\(n, t, ms) =>
                                                     case lookup "reference" ms of
-                                                         Just (MVString ref) => (indent (idt + (indentDelta * 2))) ++ "'" ++ n ++ "': " ++ n ++ ".toJson(),"
+                                                         Just (MVString ref) => (indent (idt + (indentDelta * 2))) ++ "'" ++ n ++ "': " ++ (toDartName n) ++ ".toJson(),"
                                                          _ => (indent (idt + (indentDelta * 2))) ++ "'" ++ n ++ "': " ++ (toDartJson n t) ++ ",") params
                                , (indent (idt + indentDelta)) ++ "};"
                                , (indent idt) ++ "}"
@@ -205,6 +206,7 @@ toDart conf fsm
             join "\n\n" $ List.filter nonblank [ generateImports refs
                                                , generateRecordsFromJson pre name rks
                                                , generateFromJson pre name fsm.model
+                                               , generateFetchObject pre name
                                                , generateFetchLists pre name fsm.model fsm.states
                                                , generateEvents pre name events
                                                ]
@@ -218,7 +220,7 @@ toDart conf fsm
 
         liftEventsByParticipantFromTransitions : String -> List1 Transition -> List Event
         liftEventsByParticipantFromTransitions participant transitions
-          = foldl (\acc, x => acc ++ (liftEventsByParticipantFromTriggers participant x.triggers)) [] transitions
+          = nub $ foldl (\acc, x => acc ++ (liftEventsByParticipantFromTriggers participant x.triggers)) [] transitions
 
         generateImports : List String -> String
         generateImports refs
@@ -260,7 +262,7 @@ toDart conf fsm
             generateRecordFromJson pre name (TRecord n ps)
               = List.join "\n" [ (camelize n) ++ " get" ++ (camelize n) ++ "FromJson(Map<String, dynamic> node) {"
                                , List.join "\n" $ map (generateParsingFromJson indentDelta) ps
-                               , (indent indentDelta) ++ "var " ++ (toDartName n) ++ " = " ++ pre ++ "(" ++ (List.join ", " $ map generateInitialingObject ps) ++ ");"
+                               , (indent indentDelta) ++ "var " ++ (toDartName n) ++ " = " ++ (camelize n) ++ "(" ++ (List.join ", " $ map generateInitialingObject ps) ++ ");"
                                , (indent indentDelta) ++ "return " ++ (toDartName n) ++ ";"
                                , "}"
                                ]
@@ -276,6 +278,37 @@ toDart conf fsm
                   = (toDartName n)
 
             generateRecordFromJson pre name _ = ""
+
+        generateFetchObject : String -> String -> String
+        generateFetchObject pre name
+          = let path = "/" ++ name in
+                List.join "\n" [ "Future<" ++ pre ++ ">" ++ " get" ++ pre ++ "(Caller self, int fsmid) async {"
+                               , (indent (indentDelta * 1)) ++ "var signbody = '';"
+                               , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
+                               , (indent (indentDelta * 1)) ++ "var formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
+                               , (indent (indentDelta * 1)) ++ "var date = formatter.format(now) + ' GMT';"
+                               , (indent (indentDelta * 1)) ++ "var hmacSha256 = Hmac(sha256, utf8.encode(self.appkey));"
+                               , (indent (indentDelta * 1)) ++ "var secretValue = hmacSha256.convert(utf8.encode('GET|" ++ path ++ "|${signbody}|${date}'));"
+                               , (indent (indentDelta * 1)) ++ "var headers = {"
+                               , (indent (indentDelta * 2)) ++ "'Date': date,"
+                               , (indent (indentDelta * 2)) ++ "'Authorization': '${self.appid}:${secretValue}',"
+                               , (indent (indentDelta * 2)) ++ "'x-noise': self.rand.nextInt(0xFFFFFFFF).toRadixString(16),"
+                               , (indent (indentDelta * 2)) ++ "'x-token': self.accessToken,"
+                               , (indent (indentDelta * 1)) ++ "};"
+                               , (indent (indentDelta * 1)) ++ "var response = await http.get('${self.schema}://${self.host}:${self.port}" ++ path ++ "', headers: headers);"
+                               , (indent (indentDelta * 1)) ++ "if (response.statusCode == 200) {"
+                               , (indent (indentDelta * 2)) ++ "var respbody = jsonDecode(response.body);"
+                               , (indent (indentDelta * 2)) ++ "final int code = respbody['code'];"
+                               , (indent (indentDelta * 2)) ++ "if (code == 200) {"
+                               , (indent (indentDelta * 3)) ++ "return get" ++ pre ++ "FromJson(respbody['payload']);"
+                               , (indent (indentDelta * 2)) ++ "} else {"
+                               , (indent (indentDelta * 3)) ++ "throw ApiException(code, respbody['payload']);"
+                               , (indent (indentDelta * 2)) ++ "}"
+                               , (indent (indentDelta * 1)) ++ "} else {"
+                               , (indent (indentDelta * 2)) ++ "throw ApiException(response.statusCode, response.body);"
+                               , (indent (indentDelta * 1)) ++ "}"
+                               , "}"
+                               ]
 
         generateFetchLists : String -> String -> List Parameter -> List1 State -> String
         generateFetchLists pre name model states
@@ -374,9 +407,10 @@ toDart conf fsm
                   = List.join ", " $ map (\(n, t, _) => (toDartType t) ++ " " ++ (toDartName n)) ps
 
                 generateSignatureBody : Parameter -> String
-                generateSignatureBody (n, (TList _), _)   = n ++ "=${json.encode(" ++ (toDartName n) ++ ".map((i) => i.toJson()).toList())}"
-                generateSignatureBody (n, (TDict _ _), _) = n ++ "=${json.encode(" ++ (toDartName n) ++ ")}"
-                generateSignatureBody (n, _,           _) = n ++ "=$" ++ (toDartName n)
+                generateSignatureBody (n, (TList (TPrimType _)), _) = n ++ "=${json.encode(" ++ (toDartName n) ++ ".map((i) => i).toList())}"
+                generateSignatureBody (n, (TList _), _)             = n ++ "=${json.encode(" ++ (toDartName n) ++ ".map((i) => i.toJson()).toList())}"
+                generateSignatureBody (n, (TDict _ _), _)           = n ++ "=${json.encode(" ++ (toDartName n) ++ ")}"
+                generateSignatureBody (n, _,           _)           = n ++ "=$" ++ (toDartName n)
 
 generateLibrary : String
 generateLibrary
