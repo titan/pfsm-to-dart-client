@@ -206,7 +206,7 @@ toDart conf fsm
             join "\n\n" $ List.filter nonblank [ generateImports refs
                                                , generateRecordsFromJson pre name rks
                                                , generateFromJson pre name fsm.model
-                                               , generateFetchObject pre name
+                                               , generateFetchObject pre name fsm
                                                , generateFetchLists pre name fsm.model fsm.states
                                                , generateEvents pre name events
                                                ]
@@ -221,6 +221,10 @@ toDart conf fsm
         liftEventsByParticipantFromTransitions : String -> List1 Transition -> List Event
         liftEventsByParticipantFromTransitions participant transitions
           = nub $ foldl (\acc, x => acc ++ (liftEventsByParticipantFromTriggers participant x.triggers)) [] transitions
+
+        generateParametersSignature : List Parameter -> String
+        generateParametersSignature ps
+          = List.join ", " $ map (\(n, t, _) => (toDartType t) ++ " " ++ (toDartName n)) ps
 
         generateImports : List String -> String
         generateImports refs
@@ -279,10 +283,17 @@ toDart conf fsm
 
             generateRecordFromJson pre name _ = ""
 
-        generateFetchObject : String -> String -> String
-        generateFetchObject pre name
-          = let path = "/" ++ name ++ "/${fsmid}" in
-                List.join "\n" [ "Future<" ++ pre ++ ">" ++ " get" ++ pre ++ "(Caller self, int fsmid) async {"
+        generateFetchObject : String -> String -> Fsm -> String
+        generateFetchObject pre name fsm
+          = let fsmIdStyle = fsmIdStyleOfFsm fsm
+                path = case fsmIdStyle of
+                            FsmIdStyleSession => "/" ++ name
+                            _ => "/" ++ name ++ "/${fsmid}"
+                params = case fsmIdStyle of
+                              FsmIdStyleSession => ("self", (TRecord "Caller" []), Nothing) :: []
+                              _ => ("self", (TRecord "Caller" []), Nothing) :: ("fsmid", (TPrimType PTULong), Nothing) :: []
+                in
+                List.join "\n" [ "Future<" ++ pre ++ ">" ++ " get" ++ pre ++ "(" ++ (generateParametersSignature params) ++ ") async {"
                                , (indent (indentDelta * 1)) ++ "var signbody = '';"
                                , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
                                , (indent (indentDelta * 1)) ++ "var formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
@@ -373,7 +384,8 @@ toDart conf fsm
                                   FsmIdStyleGenerate => "return respbody['payload'];"
                                   _ => "return respbody['payload'] == 'Okay';"
                     in
-                    List.join "\n" [ "Future<" ++ returnType ++ "> " ++ (toDartName ename) ++ "(" ++ (generateParametersSignature params') ++ ") async {"
+                    List.join "\n" [ "// begin " ++ ename
+                                   , "Future<" ++ returnType ++ "> " ++ (toDartName ename) ++ "(" ++ (generateParametersSignature params') ++ ") async {"
                                    , (indent (indentDelta * 1)) ++ "var body = json.encode({" ++ (List.join ", " (map (\(n, t, _) => "'" ++ n ++ "': " ++ (toDartJson n t)) params)) ++ "});"
                                    , (indent (indentDelta * 1)) ++ "var signbody = '" ++ (List.join "&" $ map generateSignatureBody $ sortBy (\(a, _, _), (b, _, _) => compare a b) params) ++ "';"
                                    , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
@@ -400,12 +412,9 @@ toDart conf fsm
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(response.statusCode, response.body);"
                                    , (indent (indentDelta * 1)) ++ "}"
                                    , "}"
+                                   ,  "// end " ++ ename
                                    ]
               where
-                generateParametersSignature : List Parameter -> String
-                generateParametersSignature ps
-                  = List.join ", " $ map (\(n, t, _) => (toDartType t) ++ " " ++ (toDartName n)) ps
-
                 generateSignatureBody : Parameter -> String
                 generateSignatureBody (n, (TList (TPrimType _)), _) = n ++ "=${json.encode(" ++ (toDartName n) ++ ".map((i) => i).toList())}"
                 generateSignatureBody (n, (TList _), _)             = n ++ "=${json.encode(" ++ (toDartName n) ++ ".map((i) => i.toJson()).toList())}"
