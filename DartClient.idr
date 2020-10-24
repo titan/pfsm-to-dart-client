@@ -281,7 +281,7 @@ toDart conf fsm
 
         generateFetchObject : String -> String -> String
         generateFetchObject pre name
-          = let path = "/" ++ name in
+          = let path = "/" ++ name ++ "/${fsmid}" in
                 List.join "\n" [ "Future<" ++ pre ++ ">" ++ " get" ++ pre ++ "(Caller self, int fsmid) async {"
                                , (indent (indentDelta * 1)) ++ "var signbody = '';"
                                , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
@@ -364,16 +364,16 @@ toDart conf fsm
                                       FsmIdStyleGenerate => "int"
                                       _ => "bool"
                     params' = case fsmIdStyle of
-                                   FsmIdStyleGenerate => params
-                                   _ => ("fsmid", (TPrimType PTULong), Nothing) :: params
+                                   FsmIdStyleUrl => ("self", (TRecord "Caller" []), Nothing) :: ("fsmid", (TPrimType PTULong), Nothing) :: params
+                                   _ => ("self", (TRecord "Caller" []), Nothing) :: params
                     path = case fsmIdStyle of
-                                FsmIdStyleGenerate => "/" ++ name ++ "/" ++ ename
-                                _ => "/" ++ name ++ "/${fsmid}/" ++ ename
+                                FsmIdStyleUrl => "/" ++ name ++ "/${fsmid}/" ++ ename
+                                _ => "/" ++ name ++ "/" ++ ename
                     return = case fsmIdStyle of
                                   FsmIdStyleGenerate => "return respbody['payload'];"
                                   _ => "return respbody['payload'] == 'Okay';"
                     in
-                    List.join "\n" [ "Future<" ++ returnType ++ "> " ++ (toDartName ename) ++ "(Caller self, " ++ (generateParametersSignature params') ++ ") async {"
+                    List.join "\n" [ "Future<" ++ returnType ++ "> " ++ (toDartName ename) ++ "(" ++ (generateParametersSignature params') ++ ") async {"
                                    , (indent (indentDelta * 1)) ++ "var body = json.encode({" ++ (List.join ", " (map (\(n, t, _) => "'" ++ n ++ "': " ++ (toDartJson n t)) params)) ++ "});"
                                    , (indent (indentDelta * 1)) ++ "var signbody = '" ++ (List.join "&" $ map generateSignatureBody $ sortBy (\(a, _, _), (b, _, _) => compare a b) params) ++ "';"
                                    , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
