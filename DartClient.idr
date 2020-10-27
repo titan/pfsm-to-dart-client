@@ -174,8 +174,12 @@ toDart conf fsm
         generateParameter : Nat -> Parameter -> String
         generateParameter idt (n, t, ms)
           = case lookup "reference" ms of
-                 Just (MVString ref) => (indent idt) ++ "final " ++ (camelize ref) ++ " " ++ (toDartName n) ++ ";"
-                 _ => (indent idt) ++ "final " ++ (toDartType t) ++ " " ++ (toDartName n) ++ ";"
+                 Just (MVString ref) => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
+                                                       , (indent idt) ++ "final " ++ (camelize ref) ++ " " ++ (toDartName n) ++ ";"
+                                                       ]
+                 _ => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
+                                     , (indent idt) ++ "final " ++ (toDartType t) ++ " " ++ (toDartName n) ++ ";"
+                                     ]
 
         generateClass : Name -> List Parameter -> String
         generateClass pre params
@@ -427,6 +431,10 @@ generateLibrary
                                        , generatePagination
                                        , generateCaller
                                        , generateApiException
+                                       , generateOptional
+                                       , generateSome
+                                       , generateNone
+                                       , generateTuple
                                        ]
   where
     generatePagination : String
@@ -460,6 +468,57 @@ generateLibrary
                        , (indent indentDelta) ++ "final int code;"
                        , (indent indentDelta) ++ "final String error;"
                        , (indent indentDelta) ++ "const ApiException(this.code, this.error);"
+                       , "}"
+                       ]
+
+    generateOptional : String
+    generateOptional
+      = List.join "\n" [ "abstract class Optional<T> {"
+                       , (indent indentDelta) ++ "static final _None _none = _None();"
+                       , (indent indentDelta) ++ "static _Some<T> from<T> (T obj) => _Some(obj);"
+                       , (indent indentDelta) ++ "static _None empty() => _none;"
+                       , (indent indentDelta) ++ "@override bool operator ==(other);"
+                       , (indent indentDelta) ++ "Optional<T> map(Function f);"
+                       , (indent indentDelta) ++ "Optional<T> fmap(Function f);"
+                       , (indent indentDelta) ++ "T get();"
+                       , (indent indentDelta) ++ "T orElseGet(Function f);"
+                       , (indent indentDelta) ++ "bool isPresent();"
+                       , "}"
+                       ]
+
+    generateSome : String
+    generateSome
+      = List.join "\n" [ "class _Some<T> extends Optional<T> {"
+                       , (indent indentDelta) ++ "final T _obj;"
+                       , (indent indentDelta) ++ "_Some(this._obj);"
+                       , (indent indentDelta) ++ "@override _Some<T> map(Function f) => _Some(f(_obj));"
+                       , (indent indentDelta) ++ "@override Optional<T> fmap(Function f) => f(_obj);"
+                       , (indent indentDelta) ++ "@override bool operator ==(other) => other is _Some && _obj == other._obj;"
+                       , (indent indentDelta) ++ "@override T get() => _obj;"
+                       , (indent indentDelta) ++ "@override T orElseGet(Function f) => _obj;"
+                       , (indent indentDelta) ++ "@override bool isPresent() => true;"
+                       , "}"
+                       ]
+
+    generateNone : String
+    generateNone
+      = List.join "\n" [ "class _None<T> extends Optional<T> {"
+                       , (indent indentDelta) ++ "_None();"
+                       , (indent indentDelta) ++ "@override _None<T> map(Function f) => this;"
+                       , (indent indentDelta) ++ "@override _None<T> fmap(Function f) => this;"
+                       , (indent indentDelta) ++ "@override bool operator ==(other) => true;"
+                       , (indent indentDelta) ++ "@override T get() => throw 'why';"
+                       , (indent indentDelta) ++ "@override T orElseGet(Function f) => f();"
+                       , (indent indentDelta) ++ "@override bool isPresent() => false;"
+                       , "}"
+                       ]
+
+    generateTuple : String
+    generateTuple
+      = List.join "\n" [ "class Tuple<A, B> {"
+                       , (indent indentDelta) ++ "A a; B b;"
+                       , (indent indentDelta) ++ "Tuple(this.a, this.b);"
+                       , (indent indentDelta) ++ " @override bool operator ==(other) => other is Tuple<A, B> && other.a == a && other.b == b;"
                        , "}"
                        ]
 
