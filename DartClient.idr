@@ -233,10 +233,12 @@ toDart conf fsm
         generateImports : List String -> String
         generateImports refs
           = List.join "\n" [ "import 'dart:convert';"
+                           , "import 'dart:io';"
                            , "import 'package:crypto/crypto.dart';"
                            , "import 'package:http/http.dart' as http;"
                            , "import 'package:intl/intl.dart';"
                            , "import '../api-helper.dart';"
+                           , "import '../session/api.dart' as session;"
                            , "import 'model.dart';"
                            , List.join "\n" $ map (\x => "import '../" ++ x ++ "/model.dart';") refs
                            , List.join "\n" $ map (\x => "import '../" ++ x ++ "/api.dart';") refs
@@ -294,10 +296,16 @@ toDart conf fsm
                             FsmIdStyleSession => "/" ++ name
                             _ => "/" ++ name ++ "/${fsmid}"
                 params = case fsmIdStyle of
-                              FsmIdStyleSession => ("self", (TRecord "Caller" []), Nothing) :: []
-                              _ => ("self", (TRecord "Caller" []), Nothing) :: ("fsmid", (TPrimType PTULong), Nothing) :: []
+                              FsmIdStyleSession => ("self", (TRecord "Caller" []), Nothing) :: ("tokensOption", (TRecord "Tuple<String, String>" []), Nothing) :: ("countdown", (TPrimType PTUInt), Nothing) :: []
+                              _ => ("self", (TRecord "Caller" []), Nothing) :: ("tokensOption", (TRecord "Tuple<String, String>" []), Nothing) :: ("countdown", (TPrimType PTUInt), Nothing) :: ("fsmid", (TPrimType PTULong), Nothing) :: []
+                params' = case fsmIdStyle of
+                               FsmIdStyleSession => ("self", (TRecord "Caller" []), Nothing) :: []
+                               _ => ("self", (TRecord "Caller" []), Nothing) :: ("fsmid", (TPrimType PTULong), Nothing) :: []
                 in
-                List.join "\n" [ "Future<" ++ pre ++ ">" ++ " get" ++ pre ++ "(" ++ (generateParametersSignature params) ++ ") async {"
+                List.join "\n" [ "Future<Tuple<Tuple<String, String>, " ++ pre ++ ">> _get" ++ pre ++ "(" ++ (generateParametersSignature params) ++ ") async {"
+                               , (indent (indentDelta * 1)) ++ "if (countdown == 0) {"
+                               , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
+                               , (indent (indentDelta * 1)) ++ "}"
                                , (indent (indentDelta * 1)) ++ "var signbody = '';"
                                , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
                                , (indent (indentDelta * 1)) ++ "var formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
@@ -315,7 +323,16 @@ toDart conf fsm
                                , (indent (indentDelta * 2)) ++ "var respbody = jsonDecode(response.body);"
                                , (indent (indentDelta * 2)) ++ "final int code = respbody['code'];"
                                , (indent (indentDelta * 2)) ++ "if (code == 200) {"
-                               , (indent (indentDelta * 3)) ++ "return get" ++ pre ++ "FromJson(respbody['payload']);"
+                               , (indent (indentDelta * 3)) ++ "return Tuple<Tuple<String, String>, " ++ pre ++ ">(tokensOption, get" ++ pre ++ "FromJson(respbody['payload']));"
+                               , (indent (indentDelta * 2)) ++ "} else if (code == 403) {"
+                               , (indent (indentDelta * 3)) ++ "try {"
+                               , (indent (indentDelta * 4)) ++ "tokensOption = await session.refresh(self);"
+                               , (indent (indentDelta * 4)) ++ "return _get" ++ pre ++ "(" ++ (generateCallArguments params) ++ ");"
+                               , (indent (indentDelta * 3)) ++ "} on ApiException {"
+                               , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
+                               , (indent (indentDelta * 4)) ++ "countdown -= 1;"
+                               , (indent (indentDelta * 4)) ++ "return _get" ++ pre ++ "(" ++ (generateCallArguments params) ++ ");"
+                               , (indent (indentDelta * 3)) ++ "}"
                                , (indent (indentDelta * 2)) ++ "} else {"
                                , (indent (indentDelta * 3)) ++ "throw ApiException(code, respbody['payload']);"
                                , (indent (indentDelta * 2)) ++ "}"
@@ -323,7 +340,17 @@ toDart conf fsm
                                , (indent (indentDelta * 2)) ++ "throw ApiException(response.statusCode, response.body);"
                                , (indent (indentDelta * 1)) ++ "}"
                                , "}"
+                               , ""
+                               , "Future<Tuple<Tuple<String, String>, " ++ pre ++ ">> get" ++ pre ++ "(" ++ (generateParametersSignature params') ++ ") async {"
+                               , (indent indentDelta) ++ "var tokensOption = Tuple<String, String>(null, null);"
+                               , (indent indentDelta) ++ "var countdown = 2;"
+                               , (indent indentDelta) ++ "return _get" ++ pre ++ "(" ++ (generateCallArguments params) ++ ");"
+                               , "}"
                                ]
+          where
+            generateCallArguments : List Parameter -> String
+            generateCallArguments params
+              = List.join ", " $ map (\(n, _, _) => (toDartName n)) params
 
         generateFetchLists : String -> String -> List Parameter -> List1 State -> String
         generateFetchLists pre name model states
@@ -333,7 +360,10 @@ toDart conf fsm
             generateFetchList pre name model (MkState sname _ _ _)
               = let path = "/" ++ name ++ "/" ++ sname
                     query = "limit=${limit}&offset=${offset}" in
-                    List.join "\n" [ "Future<Pagination<" ++ pre ++ ">> " ++ "get" ++ (camelize (sname ++ "-"  ++ name ++ "-list")) ++ "(Caller self, {int offset = 0, int limit = 10}) async {"
+                    List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ "_get" ++ (camelize (sname ++ "-"  ++ name ++ "-list")) ++ "(Caller self, Tuple<String, String> tokensOption, {int countdown = 2, int offset = 0, int limit = 10}) async {"
+                                   , (indent (indentDelta * 1)) ++ "if (countdown == 0) {"
+                                   , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
+                                   , (indent (indentDelta * 1)) ++ "}"
                                    , (indent (indentDelta * 1)) ++ "var signbody = '" ++ query ++ "';"
                                    , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
                                    , (indent (indentDelta * 1)) ++ "var formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
@@ -358,13 +388,25 @@ toDart conf fsm
                                    , (indent (indentDelta * 4)) ++ "data.add(" ++ (toDartName name) ++ ");"
                                    , (indent (indentDelta * 3)) ++ "}"
                                    , (indent (indentDelta * 3)) ++ "var pagination = payload['pagination'];"
-                                   , (indent (indentDelta * 3)) ++ "return Pagination<" ++ pre ++ ">(data.cast<" ++ pre ++ ">(), pagination['offset'], pagination['limit']);"
+                                   , (indent (indentDelta * 3)) ++ "return Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>(tokensOption, Pagination<" ++ pre ++ ">(data.cast<" ++ pre ++ ">(), pagination['offset'], pagination['limit']));"
+                                   , (indent (indentDelta * 2)) ++ "} else if (code == 403) {"
+                                   , (indent (indentDelta * 3)) ++ "try {"
+                                   , (indent (indentDelta * 4)) ++ "var _tokensOption = await session.refresh(self);"
+                                   , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(self, _tokensOption, countdown: countdown - 1, offset: offset, limit: limit);"
+                                   , (indent (indentDelta * 3)) ++ "} on ApiException {"
+                                   , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
+                                   , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(self, tokensOption, countdown: countdown - 1, offset: offset, limit: limit);"
+                                   , (indent (indentDelta * 3)) ++ "}"
                                    , (indent (indentDelta * 2)) ++ "} else {"
                                    , (indent (indentDelta * 3)) ++ "throw ApiException(code, payload);"
                                    , (indent (indentDelta * 2)) ++ "}"
                                    , (indent (indentDelta * 1)) ++ "} else {"
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(response.statusCode, response.body);"
                                    , (indent (indentDelta * 1)) ++ "}"
+                                   , "}"
+                                   , ""
+                                   , "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ "get" ++ (camelize (sname ++ "-"  ++ name ++ "-list")) ++ "(Caller self, {int offset = 0, int limit = 10}) async {"
+                                                                                                                                             , (indent indentDelta) ++ "return _get" ++ (camelize (sname ++ "-"  ++ name ++ "-list")) ++ "(self, Tuple<String, String>(null, null), countdown: 2, offset: offset, limit: limit);"
                                    , "}"
                                    ]
 
@@ -376,20 +418,26 @@ toDart conf fsm
             generateEvent pre name evt@(MkEvent ename params metas)
               = let fsmIdStyle = fsmIdStyleOfEvent evt
                     returnType = case fsmIdStyle of
-                                      FsmIdStyleGenerate => "int"
-                                      _ => "bool"
+                                      FsmIdStyleGenerate => "Tuple<Tuple<String, String>, int>"
+                                      _ => "Tuple<Tuple<String, String>, bool>"
                     params' = case fsmIdStyle of
                                    FsmIdStyleUrl => ("self", (TRecord "Caller" []), Nothing) :: ("fsmid", (TPrimType PTULong), Nothing) :: params
                                    _ => ("self", (TRecord "Caller" []), Nothing) :: params
+                    params'' = case fsmIdStyle of
+                                    FsmIdStyleUrl => ("self", (TRecord "Caller" []), Nothing) :: ("tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("countdown", (TPrimType PTUInt) , Nothing) :: ("fsmid", (TPrimType PTULong), Nothing) :: params
+                                    _ => ("self", (TRecord "Caller" []), Nothing) :: ("tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("countdown", (TPrimType PTUInt), Nothing) :: params
                     path = case fsmIdStyle of
                                 FsmIdStyleUrl => "/" ++ name ++ "/${fsmid}/" ++ ename
                                 _ => "/" ++ name ++ "/" ++ ename
                     return = case fsmIdStyle of
-                                  FsmIdStyleGenerate => "return respbody['payload'];"
-                                  _ => "return respbody['payload'] == 'Okay';"
+                                  FsmIdStyleGenerate => "return Tuple<Tuple<String, String>, int>(tokensOption, respbody['payload']);"
+                                  _ => "return Tuple<Tuple<String, String>, bool>(tokensOption, respbody['payload'] == 'Okay');"
                     in
                     List.join "\n" [ "// begin " ++ ename
-                                   , "Future<" ++ returnType ++ "> " ++ (toDartName ename) ++ "(" ++ (generateParametersSignature params') ++ ") async {"
+                                   , "Future<" ++ returnType ++ "> _" ++ (toDartName ename) ++ "(" ++ (generateParametersSignature params'') ++ ") async {"
+                                   , (indent (indentDelta * 1)) ++ "if (countdown == 0) {"
+                                   , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
+                                   , (indent (indentDelta * 1)) ++ "}"
                                    , (indent (indentDelta * 1)) ++ "var body = json.encode({" ++ (List.join ", " (map (\(n, t, _) => "'" ++ n ++ "': " ++ (toDartJson n t)) params)) ++ "});"
                                    , (indent (indentDelta * 1)) ++ "var signbody = '" ++ (List.join "&" $ map generateSignatureBody $ sortBy (\(a, _, _), (b, _, _) => compare a b) params) ++ "';"
                                    , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
@@ -409,12 +457,27 @@ toDart conf fsm
                                    , (indent (indentDelta * 2)) ++ "final int code = respbody['code'];"
                                    , (indent (indentDelta * 2)) ++ "if (code == 200) {"
                                    , (indent (indentDelta * 3)) ++ return
+                                   , (indent (indentDelta * 2)) ++ "} else if (code == 403) {"
+                                   , (indent (indentDelta * 3)) ++ "try {"
+                                   , (indent (indentDelta * 4)) ++ "tokensOption = await session.refresh(self);"
+                                   , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ename) ++ "(" ++ (generateCallArguments params'') ++ ");"
+                                   , (indent (indentDelta * 3)) ++ "} on ApiException {"
+                                   , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
+                                   , (indent (indentDelta * 4)) ++ "countdown -= 1;"
+                                   , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ename) ++ "(" ++ (generateCallArguments params'') ++ ");"
+                                   , (indent (indentDelta * 3)) ++ "}"
                                    , (indent (indentDelta * 2)) ++ "} else {"
                                    , (indent (indentDelta * 3)) ++ "throw ApiException(code, respbody['payload']);"
                                    , (indent (indentDelta * 2)) ++ "}"
                                    , (indent (indentDelta * 1)) ++ "} else {"
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(response.statusCode, response.body);"
                                    , (indent (indentDelta * 1)) ++ "}"
+                                   , "}"
+                                   , ""
+                                   , "Future<" ++ returnType ++ "> " ++ (toDartName ename) ++ "(" ++ (generateParametersSignature params') ++ ") async {"
+                                   , (indent indentDelta) ++ "var tokensOption = Tuple<String, String>(null, null);"
+                                   , (indent indentDelta) ++ "var countdown = 2;"
+                                   , (indent indentDelta) ++ "return _" ++ (toDartName ename) ++ "(" ++ (generateCallArguments params'') ++ ");"
                                    , "}"
                                    ,  "// end " ++ ename
                                    ]
@@ -425,15 +488,16 @@ toDart conf fsm
                 generateSignatureBody (n, (TDict _ _), _)           = n ++ "=${json.encode(" ++ (toDartName n) ++ ")}"
                 generateSignatureBody (n, _,           _)           = n ++ "=$" ++ (toDartName n)
 
+                generateCallArguments : List Parameter -> String
+                generateCallArguments params
+                  = List.join ", " $ map (\(n, _, _) => (toDartName n)) params
+
 generateLibrary : String
 generateLibrary
   = join "\n\n" $ List.filter nonblank [ "import 'dart:math';"
                                        , generatePagination
                                        , generateCaller
                                        , generateApiException
-                                       , generateOptional
-                                       , generateSome
-                                       , generateNone
                                        , generateTuple
                                        ]
   where
@@ -468,48 +532,6 @@ generateLibrary
                        , (indent indentDelta) ++ "final int code;"
                        , (indent indentDelta) ++ "final String error;"
                        , (indent indentDelta) ++ "const ApiException(this.code, this.error);"
-                       , "}"
-                       ]
-
-    generateOptional : String
-    generateOptional
-      = List.join "\n" [ "abstract class Optional<T> {"
-                       , (indent indentDelta) ++ "static final _None _none = _None();"
-                       , (indent indentDelta) ++ "static _Some<T> from<T> (T obj) => _Some(obj);"
-                       , (indent indentDelta) ++ "static _None empty() => _none;"
-                       , (indent indentDelta) ++ "@override bool operator ==(other);"
-                       , (indent indentDelta) ++ "Optional<T> map(Function f);"
-                       , (indent indentDelta) ++ "Optional<T> fmap(Function f);"
-                       , (indent indentDelta) ++ "T get();"
-                       , (indent indentDelta) ++ "T orElseGet(Function f);"
-                       , (indent indentDelta) ++ "bool isPresent();"
-                       , "}"
-                       ]
-
-    generateSome : String
-    generateSome
-      = List.join "\n" [ "class _Some<T> extends Optional<T> {"
-                       , (indent indentDelta) ++ "final T _obj;"
-                       , (indent indentDelta) ++ "_Some(this._obj);"
-                       , (indent indentDelta) ++ "@override _Some<T> map(Function f) => _Some(f(_obj));"
-                       , (indent indentDelta) ++ "@override Optional<T> fmap(Function f) => f(_obj);"
-                       , (indent indentDelta) ++ "@override bool operator ==(other) => other is _Some && _obj == other._obj;"
-                       , (indent indentDelta) ++ "@override T get() => _obj;"
-                       , (indent indentDelta) ++ "@override T orElseGet(Function f) => _obj;"
-                       , (indent indentDelta) ++ "@override bool isPresent() => true;"
-                       , "}"
-                       ]
-
-    generateNone : String
-    generateNone
-      = List.join "\n" [ "class _None<T> extends Optional<T> {"
-                       , (indent indentDelta) ++ "_None();"
-                       , (indent indentDelta) ++ "@override _None<T> map(Function f) => this;"
-                       , (indent indentDelta) ++ "@override _None<T> fmap(Function f) => this;"
-                       , (indent indentDelta) ++ "@override bool operator ==(other) => true;"
-                       , (indent indentDelta) ++ "@override T get() => throw 'why';"
-                       , (indent indentDelta) ++ "@override T orElseGet(Function f) => f();"
-                       , (indent indentDelta) ++ "@override bool isPresent() => false;"
                        , "}"
                        ]
 
