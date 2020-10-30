@@ -247,9 +247,9 @@ toDart conf fsm
         generateFromJson : String -> String -> List Parameter -> String
         generateFromJson pre name model
           = List.join "\n" [ pre ++ " get" ++ pre ++ "FromJson(Map<String, dynamic> node) {"
-                           , (indent indentDelta) ++ "var fsmid = int.parse(node['fsmid']);"
+                           , (indent indentDelta) ++ "final fsmid = int.parse(node['fsmid']);"
                            , List.join "\n" $ map (generateParsingFromJson indentDelta) model
-                           , (indent indentDelta) ++ "var " ++ (toDartName name) ++ " = " ++ pre ++ "(" ++ (List.join ", " $ map generateInitialingObject (("fsmid", (TPrimType PTString) , Nothing) :: model)) ++ ");"
+                           , (indent indentDelta) ++ "final " ++ (toDartName name) ++ " = " ++ pre ++ "(" ++ (List.join ", " $ map generateInitialingObject (("fsmid", (TPrimType PTString) , Nothing) :: model)) ++ ");"
                            , (indent indentDelta) ++ "return " ++ (toDartName name) ++ ";"
                            , "}"
                            ]
@@ -257,8 +257,8 @@ toDart conf fsm
             generateParsingFromJson : Nat -> Parameter -> String
             generateParsingFromJson idt (n, t, ms)
               = case lookup "reference" ms of
-                     Just (MVString ref) => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "get" ++ (camelize ref) ++ "FromJson(node['" ++ n ++ "']);"
-                     _ => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
+                     Just (MVString ref) => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ "get" ++ (camelize ref) ++ "FromJson(node['" ++ n ++ "']);"
+                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
 
             generateInitialingObject : Parameter -> String
             generateInitialingObject (n, _, _)
@@ -272,7 +272,7 @@ toDart conf fsm
             generateRecordFromJson pre name (TRecord n ps)
               = List.join "\n" [ (camelize n) ++ " get" ++ (camelize n) ++ "FromJson(Map<String, dynamic> node) {"
                                , List.join "\n" $ map (generateParsingFromJson indentDelta) ps
-                               , (indent indentDelta) ++ "var " ++ (toDartName n) ++ " = " ++ (camelize n) ++ "(" ++ (List.join ", " $ map generateInitialingObject ps) ++ ");"
+                               , (indent indentDelta) ++ "final " ++ (toDartName n) ++ " = " ++ (camelize n) ++ "(" ++ (List.join ", " $ map generateInitialingObject ps) ++ ");"
                                , (indent indentDelta) ++ "return " ++ (toDartName n) ++ ";"
                                , "}"
                                ]
@@ -280,8 +280,8 @@ toDart conf fsm
                 generateParsingFromJson : Nat -> Parameter -> String
                 generateParsingFromJson idt (n, t, ms)
                   = case lookup "reference" ms of
-                         Just (MVString ref) => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "get" ++ (camelize ref) ++ "FromJson(node['" ++ n ++ "']);"
-                         _ => (indent idt) ++ "var " ++ (toDartName n) ++ " = " ++ "node['" ++ n ++ "'];"
+                         Just (MVString ref) => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ "get" ++ (camelize ref) ++ "FromJson(node['" ++ n ++ "']);"
+                         _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ "node['" ++ n ++ "'];"
 
                 generateInitialingObject : Parameter -> String
                 generateInitialingObject (n, _, _)
@@ -306,21 +306,22 @@ toDart conf fsm
                                , (indent (indentDelta * 1)) ++ "if (countdown == 0) {"
                                , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
                                , (indent (indentDelta * 1)) ++ "}"
-                               , (indent (indentDelta * 1)) ++ "var signbody = '';"
-                               , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
-                               , (indent (indentDelta * 1)) ++ "var formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
-                               , (indent (indentDelta * 1)) ++ "var date = formatter.format(now) + ' GMT';"
-                               , (indent (indentDelta * 1)) ++ "var hmacSha256 = Hmac(sha256, utf8.encode(self.appkey));"
-                               , (indent (indentDelta * 1)) ++ "var secretValue = hmacSha256.convert(utf8.encode('GET|" ++ path ++ "|${signbody}|${date}'));"
-                               , (indent (indentDelta * 1)) ++ "var headers = {"
+                               , (indent (indentDelta * 1)) ++ "final signbody = '';"
+                               , (indent (indentDelta * 1)) ++ "final noise = fromInt32sToInt64(self.rand.nextInt(0xFFFFFFFF), self.rand.nextInt(0xFFFFFFFF));"
+                               , (indent (indentDelta * 1)) ++ "final now = DateTime.now().toUtc();"
+                               , (indent (indentDelta * 1)) ++ "final formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
+                               , (indent (indentDelta * 1)) ++ "final date = formatter.format(now) + ' GMT';"
+                               , (indent (indentDelta * 1)) ++ "final hmacSha256 = Hmac(sha256, utf8.encode(self.appkey));"
+                               , (indent (indentDelta * 1)) ++ "final secretValue = hmacSha256.convert(utf8.encode('GET|" ++ path ++ "|${signbody}|${date}'));"
+                               , (indent (indentDelta * 1)) ++ "final headers = {"
                                , (indent (indentDelta * 2)) ++ "'Date': date,"
                                , (indent (indentDelta * 2)) ++ "'Authorization': '${self.appid}:${secretValue}',"
-                               , (indent (indentDelta * 2)) ++ "'x-noise': self.rand.nextInt(0xFFFFFFFF).toRadixString(16),"
+                               , (indent (indentDelta * 2)) ++ "'x-noise': noise.toRadixString(16),"
                                , (indent (indentDelta * 2)) ++ "'x-token': self.accessToken,"
                                , (indent (indentDelta * 1)) ++ "};"
-                               , (indent (indentDelta * 1)) ++ "var response = await http.get('${self.schema}://${self.host}:${self.port}" ++ path ++ "', headers: headers);"
+                               , (indent (indentDelta * 1)) ++ "final response = await http.get('${self.schema}://${self.host}:${self.port}" ++ path ++ "', headers: headers);"
                                , (indent (indentDelta * 1)) ++ "if (response.statusCode == 200) {"
-                               , (indent (indentDelta * 2)) ++ "var respbody = jsonDecode(response.body);"
+                               , (indent (indentDelta * 2)) ++ "final respbody = jsonDecode(response.body);"
                                , (indent (indentDelta * 2)) ++ "final int code = respbody['code'];"
                                , (indent (indentDelta * 2)) ++ "if (code == 200) {"
                                , (indent (indentDelta * 3)) ++ "return Tuple<Tuple<String, String>, " ++ pre ++ ">(tokensOption, get" ++ pre ++ "FromJson(respbody['payload']));"
@@ -342,8 +343,8 @@ toDart conf fsm
                                , "}"
                                , ""
                                , "Future<Tuple<Tuple<String, String>, " ++ pre ++ ">> get" ++ pre ++ "(" ++ (generateParametersSignature params') ++ ") async {"
-                               , (indent indentDelta) ++ "var tokensOption = Tuple<String, String>(null, null);"
-                               , (indent indentDelta) ++ "var countdown = 2;"
+                               , (indent indentDelta) ++ "final tokensOption = Tuple<String, String>(null, null);"
+                               , (indent indentDelta) ++ "final countdown = 2;"
                                , (indent indentDelta) ++ "return _get" ++ pre ++ "(" ++ (generateCallArguments params) ++ ");"
                                , "}"
                                ]
@@ -364,34 +365,35 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "if (countdown == 0) {"
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
                                    , (indent (indentDelta * 1)) ++ "}"
-                                   , (indent (indentDelta * 1)) ++ "var signbody = '" ++ query ++ "';"
-                                   , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
-                                   , (indent (indentDelta * 1)) ++ "var formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
-                                   , (indent (indentDelta * 1)) ++ "var date = formatter.format(now) + ' GMT';"
-                                   , (indent (indentDelta * 1)) ++ "var hmacSha256 = Hmac(sha256, utf8.encode(self.appkey));"
-                                   , (indent (indentDelta * 1)) ++ "var secretValue = hmacSha256.convert(utf8.encode('GET|" ++ path ++ "|${signbody}|${date}'));"
-                                   , (indent (indentDelta * 1)) ++ "var headers = {"
+                                   , (indent (indentDelta * 1)) ++ "final signbody = '" ++ query ++ "';"
+                                   , (indent (indentDelta * 1)) ++ "final noise = fromInt32sToInt64(self.rand.nextInt(0xFFFFFFFF), self.rand.nextInt(0xFFFFFFFF));"
+                                   , (indent (indentDelta * 1)) ++ "final now = DateTime.now().toUtc();"
+                                   , (indent (indentDelta * 1)) ++ "final formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
+                                   , (indent (indentDelta * 1)) ++ "final date = formatter.format(now) + ' GMT';"
+                                   , (indent (indentDelta * 1)) ++ "final hmacSha256 = Hmac(sha256, utf8.encode(self.appkey));"
+                                   , (indent (indentDelta * 1)) ++ "final secretValue = hmacSha256.convert(utf8.encode('GET|" ++ path ++ "|${signbody}|${date}'));"
+                                   , (indent (indentDelta * 1)) ++ "final headers = {"
                                    , (indent (indentDelta * 2)) ++ "'Date': date,"
                                    , (indent (indentDelta * 2)) ++ "'Authorization': '${self.appid}:${secretValue}',"
-                                   , (indent (indentDelta * 2)) ++ "'x-noise': self.rand.nextInt(0xFFFFFFFF).toRadixString(16),"
+                                   , (indent (indentDelta * 2)) ++ "'x-noise': noise.toRadixString(16),"
                                    , (indent (indentDelta * 2)) ++ "'x-token': self.accessToken,"
                                    , (indent (indentDelta * 1)) ++ "};"
-                                   , (indent (indentDelta * 1)) ++ "var response = await http.get('${self.schema}://${self.host}:${self.port}" ++ path ++ "?" ++ query ++ "', headers: headers);"
+                                   , (indent (indentDelta * 1)) ++ "final response = await http.get('${self.schema}://${self.host}:${self.port}" ++ path ++ "?" ++ query ++ "', headers: headers);"
                                    , (indent (indentDelta * 1)) ++ "if (response.statusCode == 200) {"
-                                   , (indent (indentDelta * 2)) ++ "var respbody = jsonDecode(response.body);"
+                                   , (indent (indentDelta * 2)) ++ "final respbody = jsonDecode(response.body);"
                                    , (indent (indentDelta * 2)) ++ "final int code = respbody['code'];"
-                                   , (indent (indentDelta * 2)) ++ "var payload = respbody['payload'];"
+                                   , (indent (indentDelta * 2)) ++ "final payload = respbody['payload'];"
                                    , (indent (indentDelta * 2)) ++ "if (code == 200) {"
                                    , (indent (indentDelta * 3)) ++ "var data = [];"
-                                   , (indent (indentDelta * 3)) ++ "for (var e in payload['data']) {"
-                                   , (indent (indentDelta * 4)) ++ "var " ++ (toDartName name) ++ " = get" ++ pre ++ "FromJson(e);"
+                                   , (indent (indentDelta * 3)) ++ "for (final e in payload['data']) {"
+                                   , (indent (indentDelta * 4)) ++ "final " ++ (toDartName name) ++ " = get" ++ pre ++ "FromJson(e);"
                                    , (indent (indentDelta * 4)) ++ "data.add(" ++ (toDartName name) ++ ");"
                                    , (indent (indentDelta * 3)) ++ "}"
-                                   , (indent (indentDelta * 3)) ++ "var pagination = payload['pagination'];"
+                                   , (indent (indentDelta * 3)) ++ "final pagination = payload['pagination'];"
                                    , (indent (indentDelta * 3)) ++ "return Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>(tokensOption, Pagination<" ++ pre ++ ">(data.cast<" ++ pre ++ ">(), pagination['offset'], pagination['limit']));"
                                    , (indent (indentDelta * 2)) ++ "} else if (code == 403) {"
                                    , (indent (indentDelta * 3)) ++ "try {"
-                                   , (indent (indentDelta * 4)) ++ "var _tokensOption = await session.refresh(self);"
+                                   , (indent (indentDelta * 4)) ++ "final _tokensOption = await session.refresh(self);"
                                    , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(self, _tokensOption, countdown: countdown - 1, offset: offset, limit: limit);"
                                    , (indent (indentDelta * 3)) ++ "} on ApiException {"
                                    , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
@@ -438,22 +440,23 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "if (countdown == 0) {"
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
                                    , (indent (indentDelta * 1)) ++ "}"
-                                   , (indent (indentDelta * 1)) ++ "var body = json.encode({" ++ (List.join ", " (map (\(n, t, _) => "'" ++ n ++ "': " ++ (toDartJson n t)) params)) ++ "});"
-                                   , (indent (indentDelta * 1)) ++ "var signbody = '" ++ (List.join "&" $ map generateSignatureBody $ sortBy (\(a, _, _), (b, _, _) => compare a b) params) ++ "';"
-                                   , (indent (indentDelta * 1)) ++ "var now = DateTime.now().toUtc();"
-                                   , (indent (indentDelta * 1)) ++ "var formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
-                                   , (indent (indentDelta * 1)) ++ "var date = formatter.format(now) + ' GMT';"
-                                   , (indent (indentDelta * 1)) ++ "var hmacSha256 = Hmac(sha256, utf8.encode(self.appkey));"
-                                   , (indent (indentDelta * 1)) ++ "var secretValue = hmacSha256.convert(utf8.encode('POST|" ++ path ++ "|${signbody}|${date}'));"
-                                   , (indent (indentDelta * 1)) ++ "var headers = {"
+                                   , (indent (indentDelta * 1)) ++ "final body = json.encode({" ++ (List.join ", " (map (\(n, t, _) => "'" ++ n ++ "': " ++ (toDartJson n t)) params)) ++ "});"
+                                   , (indent (indentDelta * 1)) ++ "final signbody = '" ++ (List.join "&" $ map generateSignatureBody $ sortBy (\(a, _, _), (b, _, _) => compare a b) params) ++ "';"
+                                   , (indent (indentDelta * 1)) ++ "final noise = fromInt32sToInt64(self.rand.nextInt(0xFFFFFFFF), self.rand.nextInt(0xFFFFFFFF));"
+                                   , (indent (indentDelta * 1)) ++ "final now = DateTime.now().toUtc();"
+                                   , (indent (indentDelta * 1)) ++ "final formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss');"
+                                   , (indent (indentDelta * 1)) ++ "final date = formatter.format(now) + ' GMT';"
+                                   , (indent (indentDelta * 1)) ++ "final hmacSha256 = Hmac(sha256, utf8.encode(self.appkey));"
+                                   , (indent (indentDelta * 1)) ++ "final secretValue = hmacSha256.convert(utf8.encode('POST|" ++ path ++ "|${signbody}|${date}'));"
+                                   , (indent (indentDelta * 1)) ++ "final headers = {"
                                    , (indent (indentDelta * 2)) ++ "'Date': date,"
                                    , (indent (indentDelta * 2)) ++ "'Authorization': '${self.appid}:${secretValue}',"
-                                   , (indent (indentDelta * 2)) ++ "'x-noise': self.rand.nextInt(0xFFFFFFFF).toRadixString(16),"
+                                   , (indent (indentDelta * 2)) ++ "'x-noise': noise.toRadixString(16),"
                                    , (indent (indentDelta * 2)) ++ "'x-token': self.accessToken,"
                                    , (indent (indentDelta * 1)) ++ "};"
-                                   , (indent (indentDelta * 1)) ++ "var response = await http.post('${self.schema}://${self.host}:${self.port}" ++ path ++ "', headers: headers, body: body);"
+                                   , (indent (indentDelta * 1)) ++ "final response = await http.post('${self.schema}://${self.host}:${self.port}" ++ path ++ "', headers: headers, body: body);"
                                    , (indent (indentDelta * 1)) ++ "if (response.statusCode == 200) {"
-                                   , (indent (indentDelta * 2)) ++ "var respbody = jsonDecode(response.body);"
+                                   , (indent (indentDelta * 2)) ++ "final respbody = jsonDecode(response.body);"
                                    , (indent (indentDelta * 2)) ++ "final int code = respbody['code'];"
                                    , (indent (indentDelta * 2)) ++ "if (code == 200) {"
                                    , (indent (indentDelta * 3)) ++ return
@@ -475,8 +478,8 @@ toDart conf fsm
                                    , "}"
                                    , ""
                                    , "Future<" ++ returnType ++ "> " ++ (toDartName ename) ++ "(" ++ (generateParametersSignature params') ++ ") async {"
-                                   , (indent indentDelta) ++ "var tokensOption = Tuple<String, String>(null, null);"
-                                   , (indent indentDelta) ++ "var countdown = 2;"
+                                   , (indent indentDelta) ++ "final tokensOption = Tuple<String, String>(null, null);"
+                                   , (indent indentDelta) ++ "final countdown = 2;"
                                    , (indent indentDelta) ++ "return _" ++ (toDartName ename) ++ "(" ++ (generateCallArguments params'') ++ ");"
                                    , "}"
                                    ,  "// end " ++ ename
@@ -495,10 +498,12 @@ toDart conf fsm
 generateLibrary : String
 generateLibrary
   = join "\n\n" $ List.filter nonblank [ "import 'dart:math';"
+                                       , "import 'dart:typed_data';"
                                        , generatePagination
                                        , generateCaller
                                        , generateApiException
                                        , generateTuple
+                                       , generateU32sToU64
                                        ]
   where
     generatePagination : String
@@ -541,6 +546,17 @@ generateLibrary
                        , (indent indentDelta) ++ "A a; B b;"
                        , (indent indentDelta) ++ "Tuple(this.a, this.b);"
                        , (indent indentDelta) ++ " @override bool operator ==(other) => other is Tuple<A, B> && other.a == a && other.b == b;"
+                       , "}"
+                       ]
+
+    generateU32sToU64 : String
+    generateU32sToU64
+      = List.join "\n" [ "int fromInt32sToInt64(int i0, int i1) {"
+                       , (indent indentDelta) ++ "var buffer = Uint8List(8).buffer;"
+                       , (indent indentDelta) ++ "var bdata = ByteData.view(buffer);"
+                       , (indent indentDelta) ++ "bdata.setUint32(0, i0);"
+                       , (indent indentDelta) ++ "bdata.setUint32(4, i1);"
+                       , (indent indentDelta) ++ "return bdata.getUint64(0);"
                        , "}"
                        ]
 
