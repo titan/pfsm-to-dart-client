@@ -307,7 +307,8 @@ toDart conf fsm
                                , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
                                , (indent (indentDelta * 1)) ++ "}"
                                , (indent (indentDelta * 1)) ++ "final signbody = '';"
-                               , (indent (indentDelta * 1)) ++ "final noise = fromInt32sToInt64(self.rand.nextInt(0xFFFFFFFF), self.rand.nextInt(0xFFFFFFFF));"
+                               , (indent (indentDelta * 1)) ++ "final noise1 = self.rand.nextInt(0xFFFFFFFF);"
+                               , (indent (indentDelta * 1)) ++ "final noise2 = self.rand.nextInt(0xFFFFFFFF);"
                                , (indent (indentDelta * 1)) ++ "final now = DateTime.now().toUtc();"
                                , (indent (indentDelta * 1)) ++ "final formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US');"
                                , (indent (indentDelta * 1)) ++ "final date = formatter.format(now) + ' GMT';"
@@ -316,7 +317,7 @@ toDart conf fsm
                                , (indent (indentDelta * 1)) ++ "final headers = {"
                                , (indent (indentDelta * 2)) ++ "'x-date': date,"
                                , (indent (indentDelta * 2)) ++ "'Authorization': '${self.appid}:${secretValue}',"
-                               , (indent (indentDelta * 2)) ++ "'x-noise': noise.toRadixString(16),"
+                               , (indent (indentDelta * 2)) ++ "'x-noise': '${noise1.toRadixString(16)}${noise2.toRadixString(16).padLeft(8, '0')}',"
                                , (indent (indentDelta * 2)) ++ "'x-token': self.accessToken,"
                                , (indent (indentDelta * 1)) ++ "};"
                                , (indent (indentDelta * 1)) ++ "final response = await http.get('${self.schema}://${self.host}:${self.port}" ++ path ++ "', headers: headers);"
@@ -366,7 +367,8 @@ toDart conf fsm
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
                                    , (indent (indentDelta * 1)) ++ "}"
                                    , (indent (indentDelta * 1)) ++ "final signbody = '" ++ query ++ "';"
-                                   , (indent (indentDelta * 1)) ++ "final noise = fromInt32sToInt64(self.rand.nextInt(0xFFFFFFFF), self.rand.nextInt(0xFFFFFFFF));"
+                                   , (indent (indentDelta * 1)) ++ "final noise1 = self.rand.nextInt(0xFFFFFFFF);"
+                                   , (indent (indentDelta * 1)) ++ "final noise2 = self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final now = DateTime.now().toUtc();"
                                    , (indent (indentDelta * 1)) ++ "final formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US');"
                                    , (indent (indentDelta * 1)) ++ "final date = formatter.format(now) + ' GMT';"
@@ -375,7 +377,7 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "final headers = {"
                                    , (indent (indentDelta * 2)) ++ "'x-date': date,"
                                    , (indent (indentDelta * 2)) ++ "'Authorization': '${self.appid}:${secretValue}',"
-                                   , (indent (indentDelta * 2)) ++ "'x-noise': noise.toRadixString(16),"
+                                   , (indent (indentDelta * 2)) ++ "'x-noise': '${noise1.toRadixString(16)}${noise2.toRadixString(16).padLeft(8, '0')}',"
                                    , (indent (indentDelta * 2)) ++ "'x-token': self.accessToken,"
                                    , (indent (indentDelta * 1)) ++ "};"
                                    , (indent (indentDelta * 1)) ++ "final response = await http.get('${self.schema}://${self.host}:${self.port}" ++ path ++ "?" ++ query ++ "', headers: headers);"
@@ -442,7 +444,8 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "}"
                                    , (indent (indentDelta * 1)) ++ "final body = json.encode({" ++ (List.join ", " (map (\(n, t, _) => "'" ++ n ++ "': " ++ (toDartJson n t)) params)) ++ "});"
                                    , (indent (indentDelta * 1)) ++ "final signbody = '" ++ (List.join "&" $ map generateSignatureBody $ sortBy (\(a, _, _), (b, _, _) => compare a b) params) ++ "';"
-                                   , (indent (indentDelta * 1)) ++ "final noise = fromInt32sToInt64(self.rand.nextInt(0xFFFFFFFF), self.rand.nextInt(0xFFFFFFFF));"
+                                   , (indent (indentDelta * 1)) ++ "final noise1 = self.rand.nextInt(0xFFFFFFFF);"
+                                   , (indent (indentDelta * 1)) ++ "final noise2 = self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final now = DateTime.now().toUtc();"
                                    , (indent (indentDelta * 1)) ++ "final formatter = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US');"
                                    , (indent (indentDelta * 1)) ++ "final date = formatter.format(now) + ' GMT';"
@@ -451,7 +454,7 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "final headers = {"
                                    , (indent (indentDelta * 2)) ++ "'x-date': date,"
                                    , (indent (indentDelta * 2)) ++ "'Authorization': '${self.appid}:${secretValue}',"
-                                   , (indent (indentDelta * 2)) ++ "'x-noise': noise.toRadixString(16),"
+                                   , (indent (indentDelta * 2)) ++ "'x-noise': '${noise1.toRadixString(16)}${noise2.toRadixString(16).padLeft(8, '0')}',"
                                    , (indent (indentDelta * 2)) ++ "'x-token': self.accessToken,"
                                    , (indent (indentDelta * 1)) ++ "};"
                                    , (indent (indentDelta * 1)) ++ "final response = await http.post('${self.schema}://${self.host}:${self.port}" ++ path ++ "', headers: headers, body: body);"
@@ -503,7 +506,6 @@ generateLibrary
                                        , generateCaller
                                        , generateApiException
                                        , generateTuple
-                                       , generateU32sToU64
                                        ]
   where
     generatePagination : String
@@ -546,17 +548,6 @@ generateLibrary
                        , (indent indentDelta) ++ "A a; B b;"
                        , (indent indentDelta) ++ "Tuple(this.a, this.b);"
                        , (indent indentDelta) ++ " @override bool operator ==(other) => other is Tuple<A, B> && other.a == a && other.b == b;"
-                       , "}"
-                       ]
-
-    generateU32sToU64 : String
-    generateU32sToU64
-      = List.join "\n" [ "int fromInt32sToInt64(int i0, int i1) {"
-                       , (indent indentDelta) ++ "var buffer = Uint8List(8).buffer;"
-                       , (indent indentDelta) ++ "var bdata = ByteData.view(buffer);"
-                       , (indent indentDelta) ++ "bdata.setUint32(0, i0);"
-                       , (indent indentDelta) ++ "bdata.setUint32(4, i1);"
-                       , (indent indentDelta) ++ "return bdata.getUint64(0);"
                        , "}"
                        ]
 
