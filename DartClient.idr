@@ -140,16 +140,17 @@ toDartType (TArrow _ _)                          = "Function"
 toDartJson : Name -> Tipe -> String
 toDartJson n TUnit                 = "void"
 toDartJson n (TPrimType _)         = (toDartName n)
-toDartJson n (TList (TPrimType _)) = (toDartName n) ++ ".map((i) => i).toList()"
+toDartJson n (TList (TPrimType _)) = (toDartName n)
 toDartJson n (TList _)             = (toDartName n) ++ ".map((i) => i.toJson()).toList()"
 toDartJson n (TDict _ _)           = (toDartName n)
 toDartJson n (TRecord _ _)         = (toDartName n) ++ ".toJson()"
 toDartJson n (TArrow _ _)          = (toDartName n) ++ ".toJson()"
 
 fromJson : String -> Tipe -> String
-fromJson src (TList t)     = src ++ ".map((i) => " ++ (fromJson "i" t) ++ ").toList()"
-fromJson src (TRecord n _) = "get" ++ (camelize n) ++ "FromJson(" ++ src ++ ")"
-fromJson src _             = src
+fromJson src (TList (TPrimType _)) = src
+fromJson src (TList t)             = src ++ ".map((i) => " ++ (fromJson "i" t) ++ ").toList()"
+fromJson src (TRecord n _)         = "get" ++ (camelize n) ++ "FromJson(" ++ src ++ ")"
+fromJson src _                     = src
 
 toDart : AppConfig -> Fsm -> IO ()
 toDart conf fsm
@@ -502,10 +503,14 @@ generateLibrary : String
 generateLibrary
   = join "\n\n" $ List.filter nonblank [ "import 'dart:math';"
                                        , "import 'dart:typed_data';"
+                                       , "import 'dart:convert';"
+                                       , "import 'package:crypto/crypto.dart';"
                                        , generatePagination
                                        , generateCaller
                                        , generateApiException
                                        , generateTuple
+                                       , generateMd5XorUint32s
+                                       , generateAddSalt
                                        ]
   where
     generatePagination : String
@@ -548,6 +553,34 @@ generateLibrary
                        , (indent indentDelta) ++ "A a; B b;"
                        , (indent indentDelta) ++ "Tuple(this.a, this.b);"
                        , (indent indentDelta) ++ " @override bool operator ==(other) => other is Tuple<A, B> && other.a == a && other.b == b;"
+                       , "}"
+                       ]
+
+    generateMd5XorUint32s : String
+    generateMd5XorUint32s
+      = List.join "\n" [ "Digest md5XorUint32s(List<int> md5Bytes, int a0, int a1, int a2, int a3) {"
+                       , (indent indentDelta) ++ "var buffer = Uint8List(16).buffer;"
+                       , (indent indentDelta) ++ "var bdata = ByteData.view(buffer);"
+                       , (indent indentDelta) ++ "bdata.setUint32(0, a0);"
+                       , (indent indentDelta) ++ "bdata.setUint32(4, a1);"
+                       , (indent indentDelta) ++ "bdata.setUint32(8, a2);"
+                       , (indent indentDelta) ++ "bdata.setUint32(12, a3);"
+                       , (indent indentDelta) ++ "final bytes = Uint8List.view(buffer);"
+                       , (indent indentDelta) ++ "var result = Uint8List(md5Bytes.length);"
+                       , (indent indentDelta) ++ "for (var i = 0; i < md5Bytes.length; i ++) {"
+                       , (indent (indentDelta * 2)) ++ "result[i] = md5Bytes[i] ^ bytes[i];"
+                       , (indent indentDelta) ++ "}"
+                       , (indent indentDelta) ++ "return Digest(result.toList());"
+                       , "}"
+                       ]
+
+    generateAddSalt : String
+    generateAddSalt
+      = List.join "\n" [ "String addSalt(String password, int salt) {"
+                       , (indent indentDelta) ++ "final s = salt & 0xFFFFFFFF;"
+                       , (indent indentDelta) ++ "final pwmd5 = md5.convert(utf8.encode(password));"
+                       , (indent indentDelta) ++ "final passwd = md5XorUint32s(pwmd5.bytes, s, 0, s, 0);"
+                       , (indent indentDelta) ++ "return passwd.toString();"
                        , "}"
                        ]
 
