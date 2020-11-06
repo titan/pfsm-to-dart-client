@@ -138,19 +138,25 @@ toDartType (TRecord n _)                         = camelize n
 toDartType (TArrow _ _)                          = "Function"
 
 toDartJson : Name -> Tipe -> String
-toDartJson n TUnit                 = "void"
-toDartJson n (TPrimType _)         = (toDartName n)
-toDartJson n (TList (TPrimType _)) = (toDartName n)
-toDartJson n (TList _)             = (toDartName n) ++ ".map((i) => i.toJson()).toList()"
-toDartJson n (TDict _ _)           = (toDartName n)
-toDartJson n (TRecord _ _)         = (toDartName n) ++ ".toJson()"
-toDartJson n (TArrow _ _)          = (toDartName n) ++ ".toJson()"
+toDartJson n TUnit                       = "void"
+toDartJson n (TPrimType PTLong)          = (toDartName n) ++ ".toString()"
+toDartJson n (TPrimType PTULong)         = (toDartName n) ++ ".toString()"
+toDartJson n (TPrimType _)               = (toDartName n)
+toDartJson n (TList (TPrimType PTULong)) = (toDartName n) ++ ".map((i) => i.toString()).toList()"
+toDartJson n (TList (TPrimType PTLong))  = (toDartName n) ++ ".map((i) => i.toString()).toList()"
+toDartJson n (TList (TPrimType _))       = (toDartName n)
+toDartJson n (TList _)                   = (toDartName n) ++ ".map((i) => i.toJson()).toList()"
+toDartJson n (TDict _ _)                 = (toDartName n)
+toDartJson n (TRecord _ _)               = (toDartName n) ++ ".toJson()"
+toDartJson n (TArrow _ _)                = (toDartName n) ++ ".toJson()"
 
 fromJson : String -> Tipe -> String
-fromJson src (TList (TPrimType _)) = src
-fromJson src (TList t)             = src ++ ".map((i) => " ++ (fromJson "i" t) ++ ").toList()"
-fromJson src (TRecord n _)         = "get" ++ (camelize n) ++ "FromJson(" ++ src ++ ")"
-fromJson src _                     = src
+fromJson src (TList (TPrimType PTLong))  = src ++ ".map((i) => int.parse(i)).toList()"
+fromJson src (TList (TPrimType PTULong)) = src ++ ".map((i) => int.parse(i)).toList()"
+fromJson src (TList (TPrimType _))       = src
+fromJson src (TList t)                   = src ++ ".map((i) => " ++ (fromJson "i" t) ++ ").toList()"
+fromJson src (TRecord n _)               = "get" ++ (camelize n) ++ "FromJson(" ++ src ++ ")"
+fromJson src _                           = src
 
 toDart : AppConfig -> Fsm -> IO ()
 toDart conf fsm
@@ -579,7 +585,7 @@ generateLibrary
       = List.join "\n" [ "String addSalt(String password, int salt) {"
                        , (indent indentDelta) ++ "final s = salt & 0xFFFFFFFF;"
                        , (indent indentDelta) ++ "final pwmd5 = md5.convert(utf8.encode(password));"
-                       , (indent indentDelta) ++ "final passwd = md5XorUint32s(pwmd5.bytes, s, 0, s, 0);"
+                       , (indent indentDelta) ++ "final passwd = md5XorUint32s(pwmd5.bytes, 0, s, 0, s);"
                        , (indent indentDelta) ++ "return passwd.toString();"
                        , "}"
                        ]
