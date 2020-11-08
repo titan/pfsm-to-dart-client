@@ -105,8 +105,8 @@ primToDartType PTShort  = "int"
 primToDartType PTUShort = "int"
 primToDartType PTInt    = "int"
 primToDartType PTUInt   = "int"
-primToDartType PTLong   = "int"
-primToDartType PTULong  = "int"
+primToDartType PTLong   = "BigInt"
+primToDartType PTULong  = "BigInt"
 primToDartType PTReal   = "double"
 primToDartType PTString = "String"
 
@@ -151,8 +151,8 @@ toDartJson n (TRecord _ _)               = (toDartName n) ++ ".toJson()"
 toDartJson n (TArrow _ _)                = (toDartName n) ++ ".toJson()"
 
 fromJson : String -> Tipe -> String
-fromJson src (TList (TPrimType PTLong))  = src ++ ".map((i) => int.parse(i)).toList()"
-fromJson src (TList (TPrimType PTULong)) = src ++ ".map((i) => int.parse(i)).toList()"
+fromJson src (TList (TPrimType PTLong))  = src ++ ".map((i) => BigInt.parse(i)).toList()"
+fromJson src (TList (TPrimType PTULong)) = src ++ ".map((i) => BigInt.parse(i)).toList()"
 fromJson src (TList (TPrimType _))       = src
 fromJson src (TList t)                   = src ++ ".map((i) => " ++ (fromJson "i" t) ++ ").toList()"
 fromJson src (TRecord n _)               = "get" ++ (camelize n) ++ "FromJson(" ++ src ++ ")"
@@ -254,7 +254,7 @@ toDart conf fsm
         generateFromJson : String -> String -> List Parameter -> String
         generateFromJson pre name model
           = List.join "\n" [ pre ++ " get" ++ pre ++ "FromJson(Map<String, dynamic> node) {"
-                           , (indent indentDelta) ++ "final fsmid = int.parse(node['fsmid']);"
+                           , (indent indentDelta) ++ "final fsmid = BigInt.parse(node['fsmid']);"
                            , List.join "\n" $ map (generateParsingFromJson indentDelta) model
                            , (indent indentDelta) ++ "final " ++ (toDartName name) ++ " = " ++ pre ++ "(" ++ (List.join ", " $ map generateInitialingObject (("fsmid", (TPrimType PTString) , Nothing) :: model)) ++ ");"
                            , (indent indentDelta) ++ "return " ++ (toDartName name) ++ ";"
