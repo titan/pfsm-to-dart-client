@@ -582,10 +582,11 @@ generateLibrary
 
     generateAddSalt : String
     generateAddSalt
-      = List.join "\n" [ "String addSalt(String password, int salt) {"
-                       , (indent indentDelta) ++ "final s = salt & 0xFFFFFFFF;"
+      = List.join "\n" [ "String addSalt(String password, BigInt salt) {"
+                       , (indent indentDelta) ++ "final l = (salt & BigInt.from(0xFFFFFFFF)).toInt();"
+                       , (indent indentDelta) ++ "final h = ((salt >> 32) & BigInt.from(0xFFFFFFFF)).toInt();"
                        , (indent indentDelta) ++ "final pwmd5 = md5.convert(utf8.encode(password));"
-                       , (indent indentDelta) ++ "final passwd = md5XorUint32s(pwmd5.bytes, 0, s, 0, s);"
+                       , (indent indentDelta) ++ "final passwd = md5XorUint32s(pwmd5.bytes, h, l, h, l);"
                        , (indent indentDelta) ++ "return passwd.toString();"
                        , "}"
                        ]
