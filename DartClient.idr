@@ -219,15 +219,24 @@ toDart conf fsm
     generateClient pre name participant fsm
       = let refs = liftReferences fsm.model
             rks = liftRecords fsm.model
+            manyToOneFields = filter manyToOneFieldFilter fsm.model
             events = liftEventsByParticipantFromTransitions participant fsm.transitions in
             join "\n\n" $ List.filter nonblank [ generateImports refs
                                                , generateRecordsFromJson pre name rks
                                                , generateFromJson pre name fsm.model
                                                , generateFetchObject pre name fsm
                                                , generateFetchLists pre name fsm.model fsm.states
+                                               , generateFetchListsByReferences pre name fsm.model fsm.states manyToOneFields
                                                , generateEvents pre name events
                                                ]
       where
+        manyToOneFieldFilter : Parameter -> Bool
+        manyToOneFieldFilter (_, _, ms) = case lookup "reference" ms of
+                                               Just (MVString _) => case lookup "mapping" ms of
+                                                                         Just (MVString "many-to-one") => True
+                                                                         _ => False
+                                               _ => False
+
         liftEventsByParticipantFromTriggers : String -> List1 Trigger -> List Event
         liftEventsByParticipantFromTriggers participant triggers
           = foldl (\acc, (MkTrigger ps evt _ _) =>
@@ -420,6 +429,64 @@ toDart conf fsm
                                                                                                                                              , (indent indentDelta) ++ "return _get" ++ (camelize (sname ++ "-"  ++ name ++ "-list")) ++ "(_self, Tuple<String, String>(null, null), 2, offset: offset, limit: limit);"
                                    , "}"
                                    ]
+
+        generateFetchListsByReferences : String -> String -> List Parameter -> List1 State -> List Parameter -> String
+        generateFetchListsByReferences pre name model states fields
+          = List.join "\n\n" $ flatten $ map (\field => map (generateFetchListByReference pre name model field) (List1.toList states)) fields
+          where
+            generateFetchListByReference : String -> String -> List Parameter -> Parameter -> State -> String
+            generateFetchListByReference pre name model (fname, _, _) (MkState sname _ _ _)
+              = let path = "/" ++ fname ++ "/${rid}/" ++ name ++ "/" ++ sname
+                    query = "limit=${limit}&offset=${offset}" in
+                    List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ "_get" ++ (camelize (sname ++ "-"  ++ name ++ "-list-by-" ++ fname)) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, BigInt rid, {int offset = 0, int limit = 10}) async {"
+                                   , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
+                                   , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
+                                   , (indent (indentDelta * 1)) ++ "}"
+                                   , (indent (indentDelta * 1)) ++ "final _signbody = '" ++ query ++ "';"
+                                   , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
+                                   , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
+                                   , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
+                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ path ++ "|${_signbody}|${_date}'));"
+                                   , (indent (indentDelta * 1)) ++ "final _headers = {"
+                                   , (indent (indentDelta * 2)) ++ "'x-date': _date,"
+                                   , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
+                                   , (indent (indentDelta * 2)) ++ "'x-noise': '${_noise1.toRadixString(16)}${_noise2.toRadixString(16).padLeft(8, '0')}',"
+                                   , (indent (indentDelta * 2)) ++ "'x-token': _self.accessToken,"
+                                   , (indent (indentDelta * 1)) ++ "};"
+                                   , (indent (indentDelta * 1)) ++ "final _response = await http.get('${_self.schema}://${_self.host}:${_self.port}" ++ path ++ "?" ++ query ++ "', headers: _headers);"
+                                   , (indent (indentDelta * 1)) ++ "if (_response.statusCode == 200) {"
+                                   , (indent (indentDelta * 2)) ++ "final _respbody = jsonDecode(_response.body);"
+                                   , (indent (indentDelta * 2)) ++ "final int _code = _respbody['code'];"
+                                   , (indent (indentDelta * 2)) ++ "final _payload = _respbody['payload'];"
+                                   , (indent (indentDelta * 2)) ++ "if (_code == 200) {"
+                                   , (indent (indentDelta * 3)) ++ "var _data = [];"
+                                   , (indent (indentDelta * 3)) ++ "for (final _e in _payload['data']) {"
+                                   , (indent (indentDelta * 4)) ++ "final " ++ (toDartName name) ++ " = get" ++ pre ++ "FromJson(_e);"
+                                   , (indent (indentDelta * 4)) ++ "_data.add(" ++ (toDartName name) ++ ");"
+                                   , (indent (indentDelta * 3)) ++ "}"
+                                   , (indent (indentDelta * 3)) ++ "final _pagination = _payload['pagination'];"
+                                   , (indent (indentDelta * 3)) ++ "return Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>(_tokensOption, Pagination<" ++ pre ++ ">(_data.cast<" ++ pre ++ ">(), _pagination['offset'], _pagination['limit']));"
+                                   , (indent (indentDelta * 2)) ++ "} else if (_code == 403) {"
+                                   , (indent (indentDelta * 3)) ++ "try {"
+                                   , (indent (indentDelta * 4)) ++ "_tokensOption = await session.refresh(_self);"
+                                   , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ fname)) ++ "(_self, _tokensOption, _countdown - 1, rid, offset: offset, limit: limit);"
+                                   , (indent (indentDelta * 3)) ++ "} on ApiException {"
+                                   , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
+                                   , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ fname)) ++ "(_self, _tokensOption, _countdown - 1, rid, offset: offset, limit: limit);"
+                                   , (indent (indentDelta * 3)) ++ "}"
+                                   , (indent (indentDelta * 2)) ++ "} else {"
+                                   , (indent (indentDelta * 3)) ++ "throw ApiException(_code, _payload);"
+                                   , (indent (indentDelta * 2)) ++ "}"
+                                   , (indent (indentDelta * 1)) ++ "} else {"
+                                   , (indent (indentDelta * 2)) ++ "throw ApiException(_response.statusCode, _response.body);"
+                                   , (indent (indentDelta * 1)) ++ "}"
+                                   , "}"
+                                   , ""
+                                   , "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ "get" ++ (camelize (sname ++ "-"  ++ name ++ "-list-by-" ++ fname)) ++ "(Caller _self, BigInt rid, {int offset = 0, int limit = 10}) async {"
+                                                                                                                                             , (indent indentDelta) ++ "return _get" ++ (camelize (sname ++ "-"  ++ name ++ "-list-by-" ++ fname)) ++ "(_self, Tuple<String, String>(null, null), 2, rid, offset: offset, limit: limit);"
+                                   , "}"
+                                   ]
+
 
         generateEvents : String -> String -> List Event -> String
         generateEvents pre name evts
