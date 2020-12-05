@@ -157,11 +157,10 @@ toDartJson n (TRecord _ _)               = (toDartName n) ++ ".toJson()"
 toDartJson n (TArrow _ _)                = (toDartName n) ++ ".toJson()"
 
 fromJson : String -> Tipe -> String
-fromJson src (TList (TPrimType PTLong))  = src ++ ".map((i) => BigInt.parse(i)).toList()"
-fromJson src (TList (TPrimType PTULong)) = src ++ ".map((i) => BigInt.parse(i)).toList()"
-fromJson src (TList (TPrimType _))       = src
 fromJson src (TList t)                   = src ++ ".map((i) => " ++ (fromJson "i" t) ++ ").toList()"
 fromJson src (TRecord n _)               = "get" ++ (camelize n) ++ "FromJson(" ++ src ++ ")"
+fromJson src (TPrimType PTLong)          = "BigInt.parse(" ++ src ++ ")"
+fromJson src (TPrimType PTULong)         = "BigInt.parse(" ++ src ++ ")"
 fromJson src _                           = src
 
 toDart : AppConfig -> Fsm -> IO ()
@@ -188,7 +187,9 @@ toDart conf fsm
         generateParameter idt (n, (TList (TPrimType PTLong)), ms)
           = case lookup "reference" ms of
                  Just (MVString ref) => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
-                                                       , (indent idt) ++ "final List<" ++ (camelize ref) ++ "> " ++ (toDartName n) ++ ";"
+                                                       , (indent idt) ++ "final List<BigInt> " ++ (toDartName n) ++ ";"
+                                                       ,  (indent idt) ++ "/// " ++ (displayName n ms) ++ "对象"
+                                                       , (indent idt) ++ "final List<" ++ (camelize ref) ++ "> " ++ (toDartName (n ++ "-refs")) ++ ";"
                                                        ]
                  _ => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
                                      , (indent idt) ++ "final List<BigInt> " ++ (toDartName n) ++ ";"
@@ -196,7 +197,9 @@ toDart conf fsm
         generateParameter idt (n, (TList (TPrimType PTULong)), ms)
           = case lookup "reference" ms of
                  Just (MVString ref) => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
-                                                       , (indent idt) ++ "final List<" ++ (camelize ref) ++ "> " ++ (toDartName n) ++ ";"
+                                                       , (indent idt) ++ "final List<BigInt> " ++ (toDartName n) ++ ";"
+                                                       ,  (indent idt) ++ "/// " ++ (displayName n ms) ++ "对象"
+                                                       , (indent idt) ++ "final List<" ++ (camelize ref) ++ "> " ++ (toDartName (n ++ "-refs")) ++ ";"
                                                        ]
                  _ => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
                                      , (indent idt) ++ "final List<BigInt> " ++ (toDartName n) ++ ";"
@@ -204,7 +207,9 @@ toDart conf fsm
         generateParameter idt (n, t, ms)
           = case lookup "reference" ms of
                  Just (MVString ref) => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
-                                                       , (indent idt) ++ "final " ++ (camelize ref) ++ " " ++ (toDartName n) ++ ";"
+                                                       , (indent idt) ++ "final BigInt " ++ (toDartName n) ++ ";"
+                                                       ,  (indent idt) ++ "/// " ++ (displayName n ms) ++ "对象"
+                                                       , (indent idt) ++ "final " ++ (camelize ref) ++ " " ++ (toDartName (n ++ "-ref")) ++ ";"
                                                        ]
                  _ => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
                                      , (indent idt) ++ "final " ++ (toDartType t) ++ " " ++ (toDartName n) ++ ";"
@@ -214,24 +219,28 @@ toDart conf fsm
         generateClass pre params
           = List.join "\n" [ "class " ++ pre ++ " {"
                            , List.join "\n" $ map (generateParameter indentDelta) params
-                           , (indent indentDelta) ++ "const " ++ pre ++ "(" ++ (List.join ", " $ map (\(n, _, _) => "this." ++ (toDartName n)) params) ++ ");"
+                           , (indent indentDelta) ++ "const " ++ pre ++ "(" ++ (List.join ", " $ map generateConstructorParameter params) ++ ");"
                            , generateToJson indentDelta params
                            , "}"
                            ]
           where
+            generateConstructorParameter : Parameter -> String
+            generateConstructorParameter (n, (TList _), metas)
+              = case lookup "reference" metas of
+                     Just (MVString _) => List.join ", " [ "this." ++ (toDartName n)
+                                                         , "this." ++ (toDartName (n ++ "-refs"))
+                                                         ]
+                     _ => "this." ++ (toDartName n)
+            generateConstructorParameter (n, _, metas)
+              = case lookup "reference" metas of
+                     Just (MVString _) => List.join ", " [ "this." ++ (toDartName n)
+                                                         , "this." ++ (toDartName (n ++ "-ref"))
+                                                         ]
+                     _ => "this." ++ (toDartName n)
+
             generateAttributeToJson : Nat -> Parameter -> String
-            generateAttributeToJson idt (n, t@(TList (TPrimType PTLong)), metas)
-              = case lookup "reference" metas of
-                     Just (MVString ref) => (indent idt) ++ "'" ++ n ++ "': " ++ (toDartName n) ++ ".map((i) => i.toJson()).toList(),"
-                     _ => (indent idt) ++ "'" ++ n ++ "': " ++ (toDartJson n t) ++ ","
-            generateAttributeToJson idt (n, t@(TList (TPrimType PTULong)), metas)
-              = case lookup "reference" metas of
-                     Just (MVString ref) => (indent idt) ++ "'" ++ n ++ "': " ++ (toDartName n) ++ ".map((i) => i.toJson()).toList(),"
-                     _ => (indent idt) ++ "'" ++ n ++ "': " ++ (toDartJson n t) ++ ","
             generateAttributeToJson idt (n, t, metas)
-              = case lookup "reference" metas of
-                     Just (MVString ref) => (indent idt) ++ "'" ++ n ++ "': " ++ (toDartName n) ++ ".toJson(),"
-                     _ => (indent idt) ++ "'" ++ n ++ "': " ++ (toDartJson n t) ++ ","
+              = (indent idt) ++ "'" ++ n ++ "': " ++ (toDartJson n t) ++ ","
 
             generateToJson : Nat -> List Parameter -> String
             generateToJson idt params
@@ -304,22 +313,32 @@ toDart conf fsm
                            ]
           where
             generateParsingFromJson : Nat -> Parameter -> String
-            generateParsingFromJson idt (n, t@(TList (TPrimType PTLong)), ms)
+            generateParsingFromJson idt (n, (TList t), ms)
               = case lookup "reference" ms of
-                     Just (MVString ref) => (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => get" ++ (camelize ref) ++ "FromJson(i)).toList();"
-                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
-            generateParsingFromJson idt (n, t@(TList (TPrimType PTULong)), ms)
-              = case lookup "reference" ms of
-                     Just (MVString ref) => (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => get" ++ (camelize ref) ++ "FromJson(i)).toList();"
-                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
+                     Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => " ++ (fromJson "i['fsmid']" t) ++ ").toList();"
+                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = node['" ++ n ++ "'].map((i) => " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(i)).toList();"
+                                                           ]
+                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => " ++ (fromJson "i" t) ++ ");"
             generateParsingFromJson idt (n, t, ms)
               = case lookup "reference" ms of
-                     Just (MVString ref) => (indent idt) ++ "final " ++ (toDartName n) ++ " = get" ++ (camelize ref) ++ "FromJson(node['" ++ n ++ "']);"
+                     Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']['fsmid']") t) ++ ";"
+                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(node['" ++ n ++ "']);"
+                                                           ]
                      _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
 
             generateInitialingObject : Parameter -> String
-            generateInitialingObject (n, _, _)
-              = (toDartName n)
+            generateInitialingObject (n, (TList _), ms)
+              = case lookup "reference" ms of
+                     Just (MVString ref) => List.join ", " [ (toDartName n)
+                                                           , (toDartName (n ++ "-refs"))
+                                                           ]
+                     _ => toDartName n
+            generateInitialingObject (n, _, ms)
+              = case lookup "reference" ms of
+                     Just (MVString ref) => List.join ", " [ (toDartName n)
+                                                           , (toDartName (n ++ "-ref"))
+                                                           ]
+                     _ => toDartName n
 
         generateRecordsFromJson : String -> String -> List Tipe -> String
         generateRecordsFromJson pre name rks
@@ -327,7 +346,7 @@ toDart conf fsm
           where
             generateRecordFromJson : String -> String -> Tipe -> String
             generateRecordFromJson pre name (TRecord n ps)
-              = List.join "\n" [ (camelize n) ++ " get" ++ (camelize n) ++ "FromJson(Map<String, dynamic> node) {"
+              = List.join "\n" [ (camelize n) ++ " " ++ (toDartName ("get-" ++ n ++ "-from-json")) ++ "(Map<String, dynamic> node) {"
                                , List.join "\n" $ map (generateParsingFromJson indentDelta) ps
                                , (indent indentDelta) ++ "final " ++ (toDartName n) ++ " = " ++ (camelize n) ++ "(" ++ (List.join ", " $ map generateInitialingObject ps) ++ ");"
                                , (indent indentDelta) ++ "return " ++ (toDartName n) ++ ";"
@@ -335,14 +354,32 @@ toDart conf fsm
                                ]
               where
                 generateParsingFromJson : Nat -> Parameter -> String
+                generateParsingFromJson idt (n, (TList t), ms)
+                  = case lookup "reference" ms of
+                         Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => " ++ (fromJson "i['fsmid']" t) ++ ").toList();"
+                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = (node['" ++ n ++ "']).map((i) => " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(i)).toList();"
+                                                               ]
+                         _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => " ++ (fromJson "i" t) ++ ");"
                 generateParsingFromJson idt (n, t, ms)
                   = case lookup "reference" ms of
-                         Just (MVString ref) => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ "get" ++ (camelize ref) ++ "FromJson(node['" ++ n ++ "']);"
-                         _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ "node['" ++ n ++ "'];"
+                         Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']['fsmid']") t) ++ ";"
+                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(node['" ++ n ++ "']);"
+                                                               ]
+                         _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
 
                 generateInitialingObject : Parameter -> String
-                generateInitialingObject (n, _, _)
-                  = (toDartName n)
+                generateInitialingObject (n, (TList _), metas)
+                  = case lookup "reference" metas of
+                         Just (MVString _) => List.join ", " [ (toDartName n)
+                                                             , (toDartName (n ++ "-refs"))
+                                                             ]
+                         _ => toDartName n
+                generateInitialingObject (n, _, metas)
+                  = case lookup "reference" metas of
+                         Just (MVString _) => List.join ", " [ (toDartName n)
+                                                             , (toDartName (n ++ "-ref"))
+                                                             ]
+                         _ => toDartName n
 
             generateRecordFromJson pre name _ = ""
 
@@ -416,7 +453,7 @@ toDart conf fsm
             generateFetchList pre name model (MkState sname _ _ _)
               = let path = "/" ++ name ++ "/" ++ sname
                     query = "limit=${limit}&offset=${offset}" in
-                    List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ "_get" ++ (camelize (sname ++ "-"  ++ name ++ "-list")) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, {int offset = 0, int limit = 10}) async {"
+                    List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, {int offset = 0, int limit = 10}) async {"
                                    , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
                                    , (indent (indentDelta * 1)) ++ "}"
@@ -460,8 +497,8 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "}"
                                    , "}"
                                    , ""
-                                   , "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ "get" ++ (camelize (sname ++ "-"  ++ name ++ "-list")) ++ "(Caller _self, {int offset = 0, int limit = 10}) async {"
-                                                                                                                                             , (indent indentDelta) ++ "return _get" ++ (camelize (sname ++ "-"  ++ name ++ "-list")) ++ "(_self, Tuple<String, String>(null, null), 2, offset: offset, limit: limit);"
+                                   , "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(Caller _self, {int offset = 0, int limit = 10}) async {"
+                                                                                                                                             , (indent indentDelta) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(_self, Tuple<String, String>(null, null), 2, offset: offset, limit: limit);"
                                    , "}"
                                    ]
 
@@ -476,7 +513,7 @@ toDart conf fsm
                                    _ => fname
                     path = "/" ++ refname ++ "/${rid}/" ++ name ++ "/" ++ sname
                     query = "limit=${limit}&offset=${offset}" in
-                    List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ "_get" ++ (camelize (sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, BigInt rid, {int offset = 0, int limit = 10}) async {"
+                    List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, BigInt rid, {int offset = 0, int limit = 10}) async {"
                                    , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
                                    , (indent (indentDelta * 1)) ++ "}"
@@ -520,8 +557,8 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "}"
                                    , "}"
                                    , ""
-                                   , "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ "get" ++ (camelize (sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(Caller _self, BigInt rid, {int offset = 0, int limit = 10}) async {"
-                                                                                                                                             , (indent indentDelta) ++ "return _get" ++ (camelize (sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(_self, Tuple<String, String>(null, null), 2, rid, offset: offset, limit: limit);"
+                                   , "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(Caller _self, BigInt rid, {int offset = 0, int limit = 10}) async {"
+                                                                                                                                             , (indent indentDelta) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(_self, Tuple<String, String>(null, null), 2, rid, offset: offset, limit: limit);"
                                    , "}"
                                    ]
 
