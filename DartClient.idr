@@ -387,8 +387,8 @@ toDart conf fsm
         generateFetchObject pre name fsm
           = let fsmIdStyle = fsmIdStyleOfFsm fsm
                 path = case fsmIdStyle of
-                            FsmIdStyleSession => "/" ++ name
-                            _ => "/" ++ name ++ "/${_fsmid}"
+                            FsmIdStyleSession => "${_self.basePath}/" ++ name
+                            _ => "${_self.basePath}/" ++ name ++ "/${_fsmid}"
                 params = case fsmIdStyle of
                               FsmIdStyleSession => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" []), Nothing) :: ("_countdown", (TPrimType PTUInt), Nothing) :: []
                               _ => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" []), Nothing) :: ("_countdown", (TPrimType PTUInt), Nothing) :: ("_fsmid", (TPrimType PTULong), Nothing) :: []
@@ -420,6 +420,8 @@ toDart conf fsm
                                , (indent (indentDelta * 2)) ++ "} else if (_code == 403) {"
                                , (indent (indentDelta * 3)) ++ "try {"
                                , (indent (indentDelta * 4)) ++ "_tokensOption = await session.refresh(_self);"
+                               , (indent (indentDelta * 4)) ++ "_self.accessToken = _tokensOption.a;"
+                               , (indent (indentDelta * 4)) ++ "_self.refreshToken = _tokensOption.b;"
                                , (indent (indentDelta * 4)) ++ "return _get" ++ pre ++ "(" ++ (generateCallArguments params) ++ ");"
                                , (indent (indentDelta * 3)) ++ "} on ApiException {"
                                , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
@@ -435,7 +437,7 @@ toDart conf fsm
                                , "}"
                                , ""
                                , "Future<Tuple<Tuple<String, String>, " ++ pre ++ ">> get" ++ pre ++ "(" ++ (generateParametersSignature params') ++ ") async {"
-                               , (indent indentDelta) ++ "final _tokensOption = Tuple<String, String>(null, null);"
+                               , (indent indentDelta) ++ "final _tokensOption = null;"
                                , (indent indentDelta) ++ "final _countdown = 2;"
                                , (indent indentDelta) ++ "return _get" ++ pre ++ "(" ++ (generateCallArguments params) ++ ");"
                                , "}"
@@ -451,7 +453,7 @@ toDart conf fsm
           where
             generateFetchList : String -> String -> List Parameter -> State -> String
             generateFetchList pre name model (MkState sname _ _ _)
-              = let path = "/" ++ name ++ "/" ++ sname
+              = let path = "${_self.basePath}/" ++ name ++ "/" ++ sname
                     query = "limit=${limit}&offset=${offset}" in
                     List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, {int offset = 0, int limit = 10}) async {"
                                    , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
@@ -484,6 +486,8 @@ toDart conf fsm
                                    , (indent (indentDelta * 2)) ++ "} else if (_code == 403) {"
                                    , (indent (indentDelta * 3)) ++ "try {"
                                    , (indent (indentDelta * 4)) ++ "_tokensOption = await session.refresh(_self);"
+                                   , (indent (indentDelta * 4)) ++ "_self.accessToken = _tokensOption.a;"
+                                   , (indent (indentDelta * 4)) ++ "_self.refreshToken = _tokensOption.b;"
                                    , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(_self, _tokensOption, _countdown - 1, offset: offset, limit: limit);"
                                    , (indent (indentDelta * 3)) ++ "} on ApiException {"
                                    , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
@@ -511,7 +515,7 @@ toDart conf fsm
               = let refname = case lookup "reference" metas of
                                    Just (MVString refname') => refname'
                                    _ => fname
-                    path = "/" ++ refname ++ "/${rid}/" ++ name ++ "/" ++ sname
+                    path = "${_self.basePath}/" ++ refname ++ "/${rid}/" ++ name ++ "/" ++ sname
                     query = "limit=${limit}&offset=${offset}" in
                     List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, BigInt rid, {int offset = 0, int limit = 10}) async {"
                                    , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
@@ -544,6 +548,8 @@ toDart conf fsm
                                    , (indent (indentDelta * 2)) ++ "} else if (_code == 403) {"
                                    , (indent (indentDelta * 3)) ++ "try {"
                                    , (indent (indentDelta * 4)) ++ "_tokensOption = await session.refresh(_self);"
+                                   , (indent (indentDelta * 4)) ++ "_self.accessToken = _tokensOption.a;"
+                                   , (indent (indentDelta * 4)) ++ "_self.refreshToken = _tokensOption.b;"
                                    , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(_self, _tokensOption, _countdown - 1, rid, offset: offset, limit: limit);"
                                    , (indent (indentDelta * 3)) ++ "} on ApiException {"
                                    , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
@@ -580,8 +586,8 @@ toDart conf fsm
                                     FsmIdStyleUrl => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt) , Nothing) :: ("_fsmid", (TPrimType PTULong), Nothing) :: params
                                     _ => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt), Nothing) :: params
                     path = case fsmIdStyle of
-                                FsmIdStyleUrl => "/" ++ name ++ "/${_fsmid}/" ++ ename
-                                _ => "/" ++ name ++ "/" ++ ename
+                                FsmIdStyleUrl => "${_self.basePath}/" ++ name ++ "/${_fsmid}/" ++ ename
+                                _ => "${_self.basePath}/" ++ name ++ "/" ++ ename
                     return = case fsmIdStyle of
                                   FsmIdStyleGenerate => "return Tuple<Tuple<String, String>, BigInt>(_tokensOption, BigInt.parse(_respbody['payload']));"
                                   _ => "return Tuple<Tuple<String, String>, bool>(_tokensOption, _respbody['payload'] == 'Okay');"
@@ -612,6 +618,8 @@ toDart conf fsm
                                    , (indent (indentDelta * 2)) ++ "} else if (_code == 403) {"
                                    , (indent (indentDelta * 3)) ++ "try {"
                                    , (indent (indentDelta * 4)) ++ "_tokensOption = await session.refresh(_self);"
+                                   , (indent (indentDelta * 4)) ++ "_self.accessToken = _tokensOption.a;"
+                                   , (indent (indentDelta * 4)) ++ "_self.refreshToken = _tokensOption.b;"
                                    , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ename) ++ "(" ++ (generateCallArguments params'') ++ ");"
                                    , (indent (indentDelta * 3)) ++ "} on ApiException {"
                                    , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
@@ -627,7 +635,7 @@ toDart conf fsm
                                    , "}"
                                    , ""
                                    , "Future<" ++ returnType ++ "> " ++ (toDartName ename) ++ "(" ++ (generateParametersSignature params') ++ ") async {"
-                                   , (indent indentDelta) ++ "final _tokensOption = Tuple<String, String>(null, null);"
+                                   , (indent indentDelta) ++ "final _tokensOption = null;"
                                    , (indent indentDelta) ++ "final _countdown = 2;"
                                    , (indent indentDelta) ++ "return _" ++ (toDartName ename) ++ "(" ++ (generateCallArguments params'') ++ ");"
                                    , "}"
@@ -674,12 +682,13 @@ generateLibrary
                        , (indent indentDelta) ++ "final String schema;"
                        , (indent indentDelta) ++ "final String host;"
                        , (indent indentDelta) ++ "final int port;"
+                       , (indent indentDelta) ++ "final String basePath;"
                        , (indent indentDelta) ++ "final String appid;"
                        , (indent indentDelta) ++ "final String appkey;"
                        , (indent indentDelta) ++ "final Random rand;"
                        , (indent indentDelta) ++ "String accessToken;"
                        , (indent indentDelta) ++ "String refreshToken;"
-                       , (indent indentDelta) ++ "Caller(this.schema, this.host, this.port, this.appid, this.appkey, this.rand);"
+                       , (indent indentDelta) ++ "Caller(this.schema, this.host, this.port, this.basePath, this.appid, this.appkey, this.rand);"
                        , "}"
                        ]
 
