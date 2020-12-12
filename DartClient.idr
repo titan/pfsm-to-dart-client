@@ -138,7 +138,6 @@ toDartType : Tipe -> String
 toDartType TUnit                                 = "void"
 toDartType (TPrimType t)                         = primToDartType t
 toDartType (TList t)                             = "List<" ++ (toDartType t) ++ ">"
-toDartType (TDict PTString (TPrimType PTString)) = "Map<String, String>"
 toDartType (TDict k v)                           = "Map<" ++ (primToDartType k) ++ ", " ++ (toDartType v) ++ ">"
 toDartType (TRecord n _)                         = camelize n
 toDartType (TArrow _ _)                          = "Function"
@@ -157,11 +156,16 @@ toDartJson n (TRecord _ _)               = (toDartName n) ++ ".toJson()"
 toDartJson n (TArrow _ _)                = (toDartName n) ++ ".toJson()"
 
 fromJson : String -> Tipe -> String
-fromJson src (TList t)                   = src ++ ".map((i) => " ++ (fromJson "i" t) ++ ").toList()"
-fromJson src (TRecord n _)               = "get" ++ (camelize n) ++ "FromJson(" ++ src ++ ")"
-fromJson src (TPrimType PTLong)          = "BigInt.parse(" ++ src ++ ")"
-fromJson src (TPrimType PTULong)         = "BigInt.parse(" ++ src ++ ")"
-fromJson src _                           = src
+fromJson src t
+  = fromJson' src t Z
+  where
+    fromJson' : String -> Tipe -> Nat -> String
+    fromJson' src (TList t)           dep = "List<" ++ (toDartType t) ++ ">.from(" ++ src ++ ".map((i" ++ (show dep) ++ ") => " ++ (fromJson' ("i" ++ (show dep)) t (S dep)) ++ "))"
+    fromJson' src (TDict k v)         dep = src ++ ".map<" ++ (primToDartType k) ++ ", " ++ (toDartType v) ++ ">((k" ++ (show dep) ++ ", v" ++ (show dep) ++ ") => MapEntry<" ++ (primToDartType k) ++ ", " ++ (toDartType v) ++ ">(" ++ (fromJson' ("k" ++ show dep) (TPrimType k) (S dep)) ++ ", " ++ (fromJson' ("v" ++ show dep) v (S dep)) ++ "))"
+    fromJson' src (TRecord n _)       _   = "get" ++ (camelize n) ++ "FromJson(" ++ src ++ ")"
+    fromJson' src (TPrimType PTLong)  _   = "BigInt.parse(" ++ src ++ ")"
+    fromJson' src (TPrimType PTULong) _   = "BigInt.parse(" ++ src ++ ")"
+    fromJson' src _                   _   = src
 
 toDart : AppConfig -> Fsm -> IO ()
 toDart conf fsm
@@ -315,10 +319,10 @@ toDart conf fsm
             generateParsingFromJson : Nat -> Parameter -> String
             generateParsingFromJson idt (n, (TList t), ms)
               = case lookup "reference" ms of
-                     Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => " ++ (fromJson "i['fsmid']" t) ++ ").toList();"
-                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = node['" ++ n ++ "'].map((i) => " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(i)).toList();"
+                     Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = List<BigInt>.from(node['" ++ n ++ "'].map((i) => " ++ (fromJson "i['fsmid']" t) ++ "));"
+                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = List<" ++ (camelize ref) ++ ">.from(node['" ++ n ++ "'].map((i) => " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(i)));"
                                                            ]
-                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => " ++ (fromJson "i" t) ++ ");"
+                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") (TList t)) ++ ";"
             generateParsingFromJson idt (n, t, ms)
               = case lookup "reference" ms of
                      Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']['fsmid']") t) ++ ";"
@@ -386,9 +390,10 @@ toDart conf fsm
         generateFetchObject : String -> String -> Fsm -> String
         generateFetchObject pre name fsm
           = let fsmIdStyle = fsmIdStyleOfFsm fsm
-                path = case fsmIdStyle of
-                            FsmIdStyleSession => "${_self.basePath}/" ++ name
-                            _ => "${_self.basePath}/" ++ name ++ "/${_fsmid}"
+                signpath = case fsmIdStyle of
+                                FsmIdStyleSession => "/" ++ name
+                                _ => "/" ++ name ++ "/${_fsmid}"
+                path = "${_self.basePath}" ++ signpath
                 params = case fsmIdStyle of
                               FsmIdStyleSession => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" []), Nothing) :: ("_countdown", (TPrimType PTUInt), Nothing) :: []
                               _ => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" []), Nothing) :: ("_countdown", (TPrimType PTUInt), Nothing) :: ("_fsmid", (TPrimType PTULong), Nothing) :: []
@@ -404,7 +409,7 @@ toDart conf fsm
                                , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
-                               , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ path ++ "|${_signbody}|${_date}'));"
+                               , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ signpath ++ "|${_signbody}|${_date}'));"
                                , (indent (indentDelta * 1)) ++ "final _headers = {"
                                , (indent (indentDelta * 2)) ++ "'x-date': _date,"
                                , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
@@ -453,7 +458,8 @@ toDart conf fsm
           where
             generateFetchList : String -> String -> List Parameter -> State -> String
             generateFetchList pre name model (MkState sname _ _ _)
-              = let path = "${_self.basePath}/" ++ name ++ "/" ++ sname
+              = let signpath = "/" ++ name ++ "/" ++ sname
+                    path = "${_self.basePath}" ++ signpath
                     query = "limit=${limit}&offset=${offset}" in
                     List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, {int offset = 0, int limit = 10}) async {"
                                    , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
@@ -463,7 +469,7 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
-                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ path ++ "|${_signbody}|${_date}'));"
+                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ signpath ++ "|${_signbody}|${_date}'));"
                                    , (indent (indentDelta * 1)) ++ "final _headers = {"
                                    , (indent (indentDelta * 2)) ++ "'x-date': _date,"
                                    , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
@@ -515,7 +521,8 @@ toDart conf fsm
               = let refname = case lookup "reference" metas of
                                    Just (MVString refname') => refname'
                                    _ => fname
-                    path = "${_self.basePath}/" ++ refname ++ "/${rid}/" ++ name ++ "/" ++ sname
+                    signpath = "/" ++ refname ++ "/${rid}/" ++ name ++ "/" ++ sname
+                    path = "${_self.basePath}" ++ signpath
                     query = "limit=${limit}&offset=${offset}" in
                     List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, BigInt rid, {int offset = 0, int limit = 10}) async {"
                                    , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
@@ -525,7 +532,7 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
-                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ path ++ "|${_signbody}|${_date}'));"
+                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ signpath ++ "|${_signbody}|${_date}'));"
                                    , (indent (indentDelta * 1)) ++ "final _headers = {"
                                    , (indent (indentDelta * 2)) ++ "'x-date': _date,"
                                    , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
@@ -585,9 +592,10 @@ toDart conf fsm
                     params'' = case fsmIdStyle of
                                     FsmIdStyleUrl => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt) , Nothing) :: ("_fsmid", (TPrimType PTULong), Nothing) :: params
                                     _ => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt), Nothing) :: params
-                    path = case fsmIdStyle of
-                                FsmIdStyleUrl => "${_self.basePath}/" ++ name ++ "/${_fsmid}/" ++ ename
-                                _ => "${_self.basePath}/" ++ name ++ "/" ++ ename
+                    signpath = case fsmIdStyle of
+                                    FsmIdStyleUrl => "/" ++ name ++ "/${_fsmid}/" ++ ename
+                                    _ => "/" ++ name ++ "/" ++ ename
+                    path = "${_self.basePath}" ++ signpath
                     return = case fsmIdStyle of
                                   FsmIdStyleGenerate => "return Tuple<Tuple<String, String>, BigInt>(_tokensOption, BigInt.parse(_respbody['payload']));"
                                   _ => "return Tuple<Tuple<String, String>, bool>(_tokensOption, _respbody['payload'] == 'Okay');"
@@ -602,7 +610,7 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
-                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('POST|" ++ path ++ "|${_signbody}|${_date}'));"
+                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('POST|" ++ signpath ++ "|${_signbody}|${_date}'));"
                                    , (indent (indentDelta * 1)) ++ "final _headers = {"
                                    , (indent (indentDelta * 2)) ++ "'x-date': _date,"
                                    , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
