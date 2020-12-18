@@ -124,23 +124,25 @@ toDartName n
            else n'
   where
     mappings : List (String, String)
-    mappings = [ (" ", "-")
-               , ("+", "plus")
-               ]
+    mappings
+      = [ (" ", "-")
+        , ("+", "plus")
+        ]
 
     normalize : Name -> String
-    normalize n = let (pre :: post) = split (== '-') $ foldl (\acc, x => replaceAll (fst x) (snd x) acc) n mappings in
-                      List.join "" [ pre
-                                   , List.join "" $ map capital post
-                                   ]
+    normalize n
+      = let (pre :: post) = split (== '-') $ foldl (\acc, x => replaceAll (fst x) (snd x) acc) n mappings in
+            List.join "" [ pre
+                         , List.join "" $ map capital post
+                         ]
 
 toDartType : Tipe -> String
-toDartType TUnit                                 = "void"
-toDartType (TPrimType t)                         = primToDartType t
-toDartType (TList t)                             = "List<" ++ (toDartType t) ++ ">"
-toDartType (TDict k v)                           = "Map<" ++ (primToDartType k) ++ ", " ++ (toDartType v) ++ ">"
-toDartType (TRecord n _)                         = camelize n
-toDartType (TArrow _ _)                          = "Function"
+toDartType TUnit         = "void"
+toDartType (TPrimType t) = primToDartType t
+toDartType (TList t)     = "List<" ++ (toDartType t) ++ ">"
+toDartType (TDict k v)   = "Map<" ++ (primToDartType k) ++ ", " ++ (toDartType v) ++ ">"
+toDartType (TRecord n _) = camelize n
+toDartType (TArrow _ _)  = "Function"
 
 toDartJson : Name -> Tipe -> String
 toDartJson n TUnit                       = "void"
@@ -260,6 +262,7 @@ toDart conf fsm
       = let refs = liftReferences fsm.model
             rks = liftRecords fsm.model
             manyToOneFields = filter manyToOneFieldFilter fsm.model
+            searchable = isSearchable fsm.metas
             events = liftEventsByParticipantFromTransitions participant fsm.transitions in
             join "\n\n" $ List.filter nonblank [ generateImports refs
                                                , generateRecordsFromJson pre name rks
@@ -267,15 +270,42 @@ toDart conf fsm
                                                , generateFetchObject pre name fsm
                                                , generateFetchLists pre name fsm.model fsm.states
                                                , generateFetchListsByReferences pre name fsm.model fsm.states manyToOneFields
+                                               , if searchable
+                                                    then generateGenericSearch pre name
+                                                    else ""
+                                               , if searchable
+                                                    then generateStateSearchs pre name participant fsm.states
+                                                    else ""
                                                , generateEvents pre name events
                                                ]
       where
         manyToOneFieldFilter : Parameter -> Bool
-        manyToOneFieldFilter (_, _, ms) = case lookup "reference" ms of
-                                               Just (MVString _) => case lookup "mapping" ms of
-                                                                         Just (MVString "many-to-one") => True
-                                                                         _ => False
-                                               _ => False
+        manyToOneFieldFilter (_, _, ms)
+          = case lookup "reference" ms of
+                 Just (MVString _) => case lookup "mapping" ms of
+                                           Just (MVString "many-to-one") => True
+                                           _ => False
+                 _ => False
+
+        isSearchable : Maybe (List Meta) -> Bool
+        isSearchable metas
+          = case lookup "gateway.searchable" metas of
+                 Just (MVString "true") => True
+                 _ => False
+
+        liftParticipantFromOutputAction : Action -> Maybe String
+        liftParticipantFromOutputAction (OutputAction "add-to-state-list-of-participant"      (p :: _)) = Just (show p)
+        liftParticipantFromOutputAction (OutputAction "remove-from-state-list-of-participant" (p :: _)) = Just (show p)
+        liftParticipantFromOutputAction (OutputAction "push-to-generic-index-of-participant"  (p :: _)) = Just (show p)
+        liftParticipantFromOutputAction (OutputAction "flush-to-generic-index-of-participant" (p :: _)) = Just (show p)
+        liftParticipantFromOutputAction (OutputAction "push-to-state-index-of-participant"    (p :: _)) = Just (show p)
+        liftParticipantFromOutputAction (OutputAction "flush-to-state-index-of-participant"   (p :: _)) = Just (show p)
+        liftParticipantFromOutputAction _                                                               = Nothing
+
+        indexOutputActionOfParticipantFilter : Action -> Bool
+        indexOutputActionOfParticipantFilter (OutputAction "push-to-generic-index-of-participant" _)  = True
+        indexOutputActionOfParticipantFilter (OutputAction "flush-to-generic-index-of-participant" _) = True
+        indexOutputActionOfParticipantFilter _                                                        = False
 
         liftEventsByParticipantFromTriggers : String -> List1 Trigger -> List Event
         liftEventsByParticipantFromTriggers participant triggers
@@ -575,6 +605,82 @@ toDart conf fsm
                                    , "}"
                                    ]
 
+        generateSearch : String -> String -> String -> String -> String
+        generateSearch pre name pathPostfix namePostfix
+          = let signpath = "/" ++ name ++ "/search" ++ pathPostfix
+                path = "${_self.basePath}" ++ signpath
+                query = "limit=${limit}&offset=${offset}&words=${json.encode(words)}" in
+                List.join "\n" [ "// begin search-" ++ name ++ namePostfix
+                               , "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("search-" ++ name ++ namePostfix)) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, Map<String, String> words, {int offset = 0, int limit = 10}) async {"
+                               , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
+                               , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
+                               , (indent (indentDelta * 1)) ++ "}"
+                               , (indent (indentDelta * 1)) ++ "final _body = json.encode({'words': words, 'limit': limit, 'offset': offset});"
+                               , (indent (indentDelta * 1)) ++ "final _signbody = '" ++ query ++ "';"
+                               , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
+                               , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
+                               , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
+                               , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('POST|" ++ signpath ++ "|${_signbody}|${_date}'));"
+                               , (indent (indentDelta * 1)) ++ "final _headers = {"
+                               , (indent (indentDelta * 2)) ++ "'x-date': _date,"
+                               , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
+                               , (indent (indentDelta * 2)) ++ "'x-noise': '${_noise1.toRadixString(16)}${_noise2.toRadixString(16).padLeft(8, '0')}',"
+                               , (indent (indentDelta * 2)) ++ "'x-token': _self.accessToken,"
+                               , (indent (indentDelta * 1)) ++ "};"
+                               , (indent (indentDelta * 1)) ++ "final _response = await http.post('${_self.schema}://${_self.host}:${_self.port}" ++ path ++ "', headers: _headers, body: _body);"
+                               , (indent (indentDelta * 1)) ++ "if (_response.statusCode == 200) {"
+                               , (indent (indentDelta * 2)) ++ "final _respbody = jsonDecode(_response.body);"
+                               , (indent (indentDelta * 2)) ++ "final int _code = _respbody['code'];"
+                               , (indent (indentDelta * 2)) ++ "final _payload = _respbody['payload'];"
+                               , (indent (indentDelta * 2)) ++ "if (_code == 200) {"
+                               , (indent (indentDelta * 3)) ++ "var _data = [];"
+                               , (indent (indentDelta * 3)) ++ "for (final _e in _payload['data']) {"
+                               , (indent (indentDelta * 4)) ++ "final " ++ (toDartName name) ++ " = get" ++ pre ++ "FromJson(_e);"
+                               , (indent (indentDelta * 4)) ++ "_data.add(" ++ (toDartName name) ++ ");"
+                               , (indent (indentDelta * 3)) ++ "}"
+                               , (indent (indentDelta * 3)) ++ "final _pagination = _payload['pagination'];"
+                               , (indent (indentDelta * 3)) ++ "return Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>(_tokensOption, Pagination<" ++ pre ++ ">(_data.cast<" ++ pre ++ ">(), _pagination['offset'], _pagination['limit']));"
+                               , (indent (indentDelta * 2)) ++ "} else if (_code == 403) {"
+                               , (indent (indentDelta * 3)) ++ "try {"
+                               , (indent (indentDelta * 4)) ++ "_tokensOption = await session.refresh(_self);"
+                               , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ("search-" ++ name ++ namePostfix)) ++ "(_self, _tokensOption, _countdown - 1, words, offset: offset, limit: limit);"
+                               , (indent (indentDelta * 3)) ++ "} on ApiException {"
+                               , (indent (indentDelta * 4)) ++ "sleep(const Duration(seconds:1));"
+                               , (indent (indentDelta * 4)) ++ "return _" ++ (toDartName ("search-" ++ name ++ namePostfix)) ++ "(_self, _tokensOption, _countdown - 1, words, offset: offset, limit: limit);"
+                               , (indent (indentDelta * 3)) ++ "}"
+                               , (indent (indentDelta * 2)) ++ "} else {"
+                               , (indent (indentDelta * 3)) ++ "throw ApiException(_code, _payload);"
+                               , (indent (indentDelta * 2)) ++ "}"
+                               , (indent (indentDelta * 1)) ++ "} else {"
+                               , (indent (indentDelta * 2)) ++ "throw ApiException(_response.statusCode, _response.body);"
+                               , (indent (indentDelta * 1)) ++ "}"
+                               , "}"
+                               , ""
+                               , "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> " ++ (toDartName ("search-" ++ name ++ namePostfix)) ++ "(Caller _self, Map<String, String> words, {int offset = 0, int limit = 10}) async {"
+                               , (indent indentDelta) ++ "return _" ++ (toDartName ("search-" ++ name ++ namePostfix)) ++ "(_self, Tuple<String, String>(null, null), 2, words, offset: offset, limit: limit);"
+                               , "}"
+                               , "// end search-" ++ name ++ namePostfix
+                               ]
+
+        generateGenericSearch : String -> String -> String
+        generateGenericSearch pre name
+          = generateSearch pre name "" ""
+
+        generateStateSearchs : String -> String -> String -> List1 State -> String
+        generateStateSearchs pre name pname states
+          = let normalCode = join "\n\n" $ map (\(MkState sname _ _ _) => generateSearch pre name ("/" ++ sname) ("-in-" ++ sname)) states
+                participantStates = filter (indexStateForParticipantFilter pname) states
+                participantCode = List.join "\n\n" $ map (\(MkState sname _ _ _) => generateSearch pre name("/" ++ sname) ("-in-" ++ sname )) participantStates in
+                if length participantStates > 0
+                   then participantCode
+                   else normalCode
+          where
+            indexStateForParticipantFilter : String -> State -> Bool
+            indexStateForParticipantFilter pname state
+              = let actions = liftActionsFromState state
+                    outputActions = filter indexOutputActionOfParticipantFilter actions
+                    participants = List.filter (\x => fromMaybe "" x == pname) $ map liftParticipantFromOutputAction actions in
+                    length participants > 0
 
         generateEvents : String -> String -> List Event -> String
         generateEvents pre name evts
