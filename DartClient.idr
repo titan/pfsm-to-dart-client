@@ -14,6 +14,7 @@ import Pfsm.Analyser
 import Pfsm.Checker
 import Pfsm.Data
 import Pfsm.Parser
+import Pfsm.Service2
 
 indentDelta : Nat
 indentDelta = 2
@@ -268,44 +269,14 @@ toDart conf fsm
                                                , generateRecordsFromJson pre name rks
                                                , generateFromJson pre name fsm.model
                                                , generateFetchObject pre name fsm
-                                               , generateFetchLists pre name fsm.model fsm.states
-                                               , generateFetchListsByReferences pre name fsm.model fsm.states manyToOneFields
+                                               , generateFetchLists pre name fsm.states fsm.transitions
+                                               , generateFetchListsByReferences pre name fsm.states fsm.transitions manyToOneFields
                                                , if searchable
-                                                    then generateGenericSearch pre name
-                                                    else ""
-                                               , if searchable
-                                                    then generateStateSearchs pre name participant fsm.states
+                                                    then generateStateSearchs pre name participant fsm.states fsm.transitions
                                                     else ""
                                                , generateEvents pre name events
                                                ]
       where
-        manyToOneFieldFilter : Parameter -> Bool
-        manyToOneFieldFilter (_, _, ms)
-          = case lookup "reference" ms of
-                 Just (MVString _) => case lookup "mapping" ms of
-                                           Just (MVString "many-to-one") => True
-                                           _ => False
-                 _ => False
-
-        isSearchable : Maybe (List Meta) -> Bool
-        isSearchable metas
-          = case lookup "gateway.searchable" metas of
-                 Just (MVString "true") => True
-                 _ => False
-
-        liftParticipantFromOutputAction : Action -> Maybe String
-        liftParticipantFromOutputAction (OutputAction "add-to-state-list-of-participant"      (p :: _)) = Just (show p)
-        liftParticipantFromOutputAction (OutputAction "remove-from-state-list-of-participant" (p :: _)) = Just (show p)
-        liftParticipantFromOutputAction (OutputAction "push-to-generic-index-of-participant"  (p :: _)) = Just (show p)
-        liftParticipantFromOutputAction (OutputAction "flush-to-generic-index-of-participant" (p :: _)) = Just (show p)
-        liftParticipantFromOutputAction (OutputAction "push-to-state-index-of-participant"    (p :: _)) = Just (show p)
-        liftParticipantFromOutputAction (OutputAction "flush-to-state-index-of-participant"   (p :: _)) = Just (show p)
-        liftParticipantFromOutputAction _                                                               = Nothing
-
-        indexOutputActionOfParticipantFilter : Action -> Bool
-        indexOutputActionOfParticipantFilter (OutputAction "push-to-generic-index-of-participant" _)  = True
-        indexOutputActionOfParticipantFilter (OutputAction "flush-to-generic-index-of-participant" _) = True
-        indexOutputActionOfParticipantFilter _                                                        = False
 
         liftEventsByParticipantFromTriggers : String -> List1 Trigger -> List Event
         liftEventsByParticipantFromTriggers participant triggers
@@ -482,12 +453,13 @@ toDart conf fsm
             generateCallArguments params
               = List.join ", " $ map (\(n, _, _) => (toDartName n)) params
 
-        generateFetchLists : String -> String -> List Parameter -> List1 State -> String
-        generateFetchLists pre name model states
-          = List1.join "\n\n" $ map (generateFetchList pre name model) states
+        generateFetchLists : String -> String -> List1 State -> List1 Transition -> String
+        generateFetchLists pre name states transitions
+          = let filteredStates = liftListStates states transitions in
+                List.join "\n\n" $ map (generateFetchList pre name) filteredStates
           where
-            generateFetchList : String -> String -> List Parameter -> State -> String
-            generateFetchList pre name model (MkState sname _ _ _)
+            generateFetchList : String -> String -> State -> String
+            generateFetchList pre name (MkState sname _ _ _)
               = let signpath = "/" ++ name ++ "/" ++ sname
                     path = "${_self.basePath}" ++ signpath
                     query = "limit=${limit}&offset=${offset}" in
@@ -542,16 +514,13 @@ toDart conf fsm
                                    , "}"
                                    ]
 
-        generateFetchListsByReferences : String -> String -> List Parameter -> List1 State -> List Parameter -> String
-        generateFetchListsByReferences pre name model states fields
-          = List.join "\n\n" $ flatten $ map (\field => map (generateFetchListByReference pre name model field) (List1.toList states)) fields
+        generateFetchListsByReferences : String -> String -> List1 State -> List1 Transition -> List Parameter -> String
+        generateFetchListsByReferences pre name states transitions fields
+          = List.join "\n\n" $ map (generateFetchListsByReference pre name states transitions) fields
           where
-            generateFetchListByReference : String -> String -> List Parameter -> Parameter -> State -> String
-            generateFetchListByReference pre name model (fname, _, metas) (MkState sname _ _ _)
-              = let refname = case lookup "reference" metas of
-                                   Just (MVString refname') => refname'
-                                   _ => fname
-                    signpath = "/" ++ refname ++ "/${rid}/" ++ name ++ "/" ++ sname
+            generateFetchListByReference : String -> String -> String -> State -> String
+            generateFetchListByReference pre name refname (MkState sname _ _ _)
+              = let signpath = "/" ++ refname ++ "/${rid}/" ++ name ++ "/" ++ sname
                     path = "${_self.basePath}" ++ signpath
                     query = "limit=${limit}&offset=${offset}" in
                     List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, BigInt rid, {int offset = 0, int limit = 10}) async {"
@@ -604,6 +573,14 @@ toDart conf fsm
                                                                                                                                              , (indent indentDelta) ++ "return _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(_self, Tuple<String, String>(null, null), 2, rid, offset: offset, limit: limit);"
                                    , "}"
                                    ]
+
+            generateFetchListsByReference : String -> String -> List1 State -> List1 Transition -> Parameter -> String
+            generateFetchListsByReference pre name states transitions (fname, _, metas)
+              = let refname = case lookup "reference" metas of
+                                   Just (MVString refname') => refname'
+                                   _ => fname
+                    filteredStates = liftListStates states transitions in
+                    List.join "\n\n" $ map (generateFetchListByReference pre name refname) filteredStates
 
         generateSearch : String -> String -> String -> String -> String
         generateSearch pre name pathPostfix namePostfix
@@ -662,25 +639,16 @@ toDart conf fsm
                                , "// end search-" ++ name ++ namePostfix
                                ]
 
-        generateGenericSearch : String -> String -> String
-        generateGenericSearch pre name
-          = generateSearch pre name "" ""
-
-        generateStateSearchs : String -> String -> String -> List1 State -> String
-        generateStateSearchs pre name pname states
-          = let normalCode = join "\n\n" $ map (\(MkState sname _ _ _) => generateSearch pre name ("/" ++ sname) ("-in-" ++ sname)) states
-                participantStates = filter (indexStateForParticipantFilter pname) states
-                participantCode = List.join "\n\n" $ map (\(MkState sname _ _ _) => generateSearch pre name("/" ++ sname) ("-in-" ++ sname )) participantStates in
-                if length participantStates > 0
-                   then participantCode
-                   else normalCode
-          where
-            indexStateForParticipantFilter : String -> State -> Bool
-            indexStateForParticipantFilter pname state
-              = let actions = liftActionsFromState state
-                    outputActions = filter indexOutputActionOfParticipantFilter actions
-                    participants = List.filter (\x => fromMaybe "" x == pname) $ map liftParticipantFromOutputAction actions in
-                    length participants > 0
+        generateStateSearchs : String -> String -> String -> List1 State -> List1 Transition -> String
+        generateStateSearchs pre name pname states transitions
+          = let filteredStates = liftIndexStates states transitions
+                indexCode = map (\(MkState sname _ _ _) => generateSearch pre name ("/" ++ sname) ("-in-" ++ sname)) filteredStates
+                pairs = liftIndexStatesOfParticipants states transitions
+                filteredPairs = filter (\(_, p) => p == pname) pairs
+                indexCodeOfParticipants = map (\((MkState sname _ _ _), pname) => generateSearch pre name ("/" ++ sname) ("-in-" ++ sname)) filteredPairs in
+                if length indexCodeOfParticipants > 0
+                   then List.join "\n\n" indexCodeOfParticipants
+                   else List.join "\n\n" indexCode
 
         generateEvents : String -> String -> List Event -> String
         generateEvents pre name evts

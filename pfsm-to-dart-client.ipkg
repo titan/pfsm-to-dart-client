@@ -1,6 +1,6 @@
 package pfsm-to-dart-client
 
-depends = contrib, pfsm
+depends = contrib, pfsm, pfsm-service2-base
 main = DartClient
 executable = pfsm-to-dart-client
 
