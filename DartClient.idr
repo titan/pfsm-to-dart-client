@@ -264,17 +264,26 @@ toDart conf fsm
             rks = liftRecords fsm.model
             manyToOneFields = filter manyToOneFieldFilter fsm.model
             searchable = isSearchable fsm.metas
-            events = liftEventsByParticipantFromTransitions participant fsm.transitions in
+            events = liftEventsByParticipantFromTransitions participant fsm.transitions
+            participated = length (filter (\(MkParticipant pname _) => pname == participant) fsm.participants) /= 0 in
             join "\n\n" $ List.filter nonblank [ generateImports refs
                                                , generateRecordsFromJson pre name rks
                                                , generateFromJson pre name fsm.model
-                                               , generateFetchObject pre name fsm
-                                               , generateFetchLists pre name fsm.states fsm.transitions
-                                               , generateFetchListsByReferences pre name fsm.states fsm.transitions manyToOneFields
-                                               , if searchable
+                                               , if participated
+                                                    then generateFetchObject pre name fsm
+                                                    else ""
+                                               , if participated
+                                                    then generateFetchLists pre name fsm.states fsm.transitions
+                                                    else ""
+                                               , if participated
+                                                    then generateFetchListsByReferences pre name fsm.states fsm.transitions manyToOneFields
+                                                    else ""
+                                               , if participated && searchable
                                                     then generateStateSearchs pre name participant fsm.states fsm.transitions
                                                     else ""
-                                               , generateEvents pre name events
+                                               , if participated
+                                                    then generateEvents pre name events
+                                                    else ""
                                                ]
       where
 
