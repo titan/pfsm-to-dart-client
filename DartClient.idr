@@ -196,7 +196,7 @@ toDart conf fsm
                  Just (MVString ref) => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
                                                        , (indent idt) ++ "final List<BigInt> " ++ (toDartName n) ++ ";"
                                                        ,  (indent idt) ++ "/// " ++ (displayName n ms) ++ "对象"
-                                                       , (indent idt) ++ "final List<" ++ (camelize ref) ++ "> " ++ (toDartName (n ++ "-refs")) ++ ";"
+                                                       , (indent idt) ++ "final List<" ++ (camelize $ toDartName ref) ++ "> " ++ (toDartName (n ++ "-refs")) ++ ";"
                                                        ]
                  _ => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
                                      , (indent idt) ++ "final List<BigInt> " ++ (toDartName n) ++ ";"
@@ -206,7 +206,7 @@ toDart conf fsm
                  Just (MVString ref) => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
                                                        , (indent idt) ++ "final List<BigInt> " ++ (toDartName n) ++ ";"
                                                        ,  (indent idt) ++ "/// " ++ (displayName n ms) ++ "对象"
-                                                       , (indent idt) ++ "final List<" ++ (camelize ref) ++ "> " ++ (toDartName (n ++ "-refs")) ++ ";"
+                                                       , (indent idt) ++ "final List<" ++ (camelize $ toDartName ref) ++ "> " ++ (toDartName (n ++ "-refs")) ++ ";"
                                                        ]
                  _ => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
                                      , (indent idt) ++ "final List<BigInt> " ++ (toDartName n) ++ ";"
@@ -216,7 +216,7 @@ toDart conf fsm
                  Just (MVString ref) => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
                                                        , (indent idt) ++ "final BigInt " ++ (toDartName n) ++ ";"
                                                        ,  (indent idt) ++ "/// " ++ (displayName n ms) ++ "对象"
-                                                       , (indent idt) ++ "final " ++ (camelize ref) ++ " " ++ (toDartName (n ++ "-ref")) ++ ";"
+                                                       , (indent idt) ++ "final " ++ (camelize $ toDartName ref) ++ " " ++ (toDartName (n ++ "-ref")) ++ ";"
                                                        ]
                  _ => List.join "\n" [ (indent idt) ++ "/// " ++ (displayName n ms)
                                      , (indent idt) ++ "final " ++ (toDartType t) ++ " " ++ (toDartName n) ++ ";"
@@ -330,13 +330,13 @@ toDart conf fsm
             generateParsingFromJson idt (n, (TList t), ms)
               = case lookup "reference" ms of
                      Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = List<BigInt>.from(node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (fromJson "i['fsmid']" t) ++ "));"
-                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = List<" ++ (camelize ref) ++ ">.from(node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(i)));"
+                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = List<" ++ (camelize ref) ++ ">.from(node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(i)));"
                                                            ]
                      _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") (TList t)) ++ ";"
             generateParsingFromJson idt (n, t, ms)
               = case lookup "reference" ms of
                      Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'] == '0'? BigInt.zero: " ++ (fromJson ("node['" ++ n ++ "']['fsmid']") t) ++ ";"
-                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = node['" ++ n ++ "'] == '0'? null: " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(node['" ++ n ++ "']);"
+                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = node['" ++ n ++ "'] == '0'? null: " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(node['" ++ n ++ "']);"
                                                            ]
                      _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
 
@@ -371,13 +371,13 @@ toDart conf fsm
                 generateParsingFromJson idt (n, (TList t), ms)
                   = case lookup "reference" ms of
                          Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (fromJson "i['fsmid']" t) ++ ").toList();"
-                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = (node['" ++ n ++ "']).where((i) => i != '0').map((i) => " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(i)).toList();"
+                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = (node['" ++ n ++ "']).where((i) => i != '0').map((i) => " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(i)).toList();"
                                                                ]
                          _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => " ++ (fromJson "i" t) ++ ");"
                 generateParsingFromJson idt (n, t, ms)
                   = case lookup "reference" ms of
                          Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'] == '0'? BigInt.zero: " ++ (fromJson ("node['" ++ n ++ "']['fsmid']") t) ++ ";"
-                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = node['" ++ n ++ "'] == '0'? null: " ++ (toDartName ("get-" ++ ref ++ "-from-json")) ++ "(node['" ++ n ++ "']);"
+                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = node['" ++ n ++ "'] == '0'? null: " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(node['" ++ n ++ "']);"
                                                                ]
                          _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
 
