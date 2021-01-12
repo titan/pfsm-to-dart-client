@@ -675,12 +675,13 @@ toDart conf fsm
                     returnType = case fsmIdStyle of
                                       FsmIdStyleGenerate => "Tuple<Tuple<String, String>, BigInt>"
                                       _ => "Tuple<Tuple<String, String>, bool>"
+                    payloadParams = filter payloadParameterFilter params
                     params' = case fsmIdStyle of
-                                   FsmIdStyleUrl => ("_self", (TRecord "Caller" []), Nothing) :: ("_fsmid", (TPrimType PTULong), Nothing) :: params
-                                   _ => ("_self", (TRecord "Caller" []), Nothing) :: params
+                                   FsmIdStyleUrl => ("_self", (TRecord "Caller" []), Nothing) :: ("_fsmid", (TPrimType PTULong), Nothing) :: payloadParams
+                                   _ => ("_self", (TRecord "Caller" []), Nothing) :: payloadParams
                     params'' = case fsmIdStyle of
-                                    FsmIdStyleUrl => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt) , Nothing) :: ("_fsmid", (TPrimType PTULong), Nothing) :: params
-                                    _ => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt), Nothing) :: params
+                                    FsmIdStyleUrl => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt) , Nothing) :: ("_fsmid", (TPrimType PTULong), Nothing) :: payloadParams
+                                    _ => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt), Nothing) :: payloadParams
                     signpath = case fsmIdStyle of
                                     FsmIdStyleUrl => "/" ++ name ++ "/${_fsmid}/" ++ ename
                                     _ => "/" ++ name ++ "/" ++ ename
@@ -694,8 +695,8 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
                                    , (indent (indentDelta * 1)) ++ "}"
-                                   , (indent (indentDelta * 1)) ++ "final _body = json.encode({" ++ (List.join ", " (map (\(n, t, _) => "'" ++ n ++ "': " ++ (toDartJson n t)) params)) ++ "});"
-                                   , (indent (indentDelta * 1)) ++ "final _signbody = '" ++ (List.join "&" $ map generateSignatureBody $ sortBy (\(a, _, _), (b, _, _) => compare a b) params) ++ "';"
+                                   , (indent (indentDelta * 1)) ++ "final _body = json.encode({" ++ (List.join ", " (map (\(n, t, _) => "'" ++ n ++ "': " ++ (toDartJson n t)) payloadParams)) ++ "});"
+                                   , (indent (indentDelta * 1)) ++ "final _signbody = '" ++ (List.join "&" $ map generateSignatureBody $ sortBy (\(a, _, _), (b, _, _) => compare a b) payloadParams) ++ "';"
                                    , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
