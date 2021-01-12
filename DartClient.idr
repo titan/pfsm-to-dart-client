@@ -273,10 +273,10 @@ toDart conf fsm
                                                     then generateFetchObject pre name fsm
                                                     else ""
                                                , if participated
-                                                    then generateFetchLists pre name fsm.states fsm.transitions
+                                                    then generateFetchLists pre name participant fsm.states fsm.transitions
                                                     else ""
                                                , if participated
-                                                    then generateFetchListsByReferences pre name fsm.states fsm.transitions manyToOneFields
+                                                    then generateFetchListsByReferences pre name participant fsm.states fsm.transitions manyToOneFields
                                                     else ""
                                                , if participated && searchable
                                                     then generateStateSearchs pre name participant fsm.states fsm.transitions
@@ -462,10 +462,13 @@ toDart conf fsm
             generateCallArguments params
               = List.join ", " $ map (\(n, _, _) => (toDartName n)) params
 
-        generateFetchLists : String -> String -> List1 State -> List1 Transition -> String
-        generateFetchLists pre name states transitions
-          = let filteredStates = liftListStates states transitions in
-                List.join "\n\n" $ map (generateFetchList pre name) filteredStates
+        generateFetchLists : String -> String -> String -> List1 State -> List1 Transition -> String
+        generateFetchLists pre name pname states transitions
+          = let filteredStates = liftListStates states transitions
+                pairs = liftListStatesOfParticipants states transitions
+                filteredStatesOfParticipant = map (\(s, _) => s) $ filter (\(_, p) => p == pname) pairs
+                combinedStates = nubBy (\(MkState x _ _ _), (MkState y _ _ _) => x == y) (filteredStates ++ filteredStatesOfParticipant) in
+                List.join "\n\n" $ map (generateFetchList pre name) combinedStates
           where
             generateFetchList : String -> String -> State -> String
             generateFetchList pre name (MkState sname _ _ _)
@@ -523,9 +526,9 @@ toDart conf fsm
                                    , "}"
                                    ]
 
-        generateFetchListsByReferences : String -> String -> List1 State -> List1 Transition -> List Parameter -> String
-        generateFetchListsByReferences pre name states transitions fields
-          = List.join "\n\n" $ map (generateFetchListsByReference pre name states transitions) fields
+        generateFetchListsByReferences : String -> String -> String -> List1 State -> List1 Transition -> List Parameter -> String
+        generateFetchListsByReferences pre name pname states transitions fields
+          = List.join "\n\n" $ map (generateFetchListsByReference pre name pname states transitions) fields
           where
             generateFetchListByReference : String -> String -> String -> State -> String
             generateFetchListByReference pre name refname (MkState sname _ _ _)
@@ -583,13 +586,16 @@ toDart conf fsm
                                    , "}"
                                    ]
 
-            generateFetchListsByReference : String -> String -> List1 State -> List1 Transition -> Parameter -> String
-            generateFetchListsByReference pre name states transitions (fname, _, metas)
+            generateFetchListsByReference : String -> String -> String -> List1 State -> List1 Transition -> Parameter -> String
+            generateFetchListsByReference pre name pname states transitions (fname, _, metas)
               = let refname = case lookup "reference" metas of
                                    Just (MVString refname') => refname'
                                    _ => fname
-                    filteredStates = liftListStates states transitions in
-                    List.join "\n\n" $ map (generateFetchListByReference pre name refname) filteredStates
+                    filteredStates = liftListStates states transitions
+                    pairs = liftListStatesOfParticipants states transitions
+                    filteredStatesOfParticipant = map (\(s, _) => s) $ filter (\(_, p) => p == pname) pairs
+                    combinedStates = nubBy (\(MkState x _ _ _), (MkState y _ _ _) => x == y) (filteredStates ++ filteredStatesOfParticipant) in
+                    List.join "\n\n" $ map (generateFetchListByReference pre name refname) combinedStates
 
         generateSearch : String -> String -> String -> String -> String
         generateSearch pre name pathPostfix namePostfix
