@@ -423,7 +423,7 @@ toDart conf fsm
           = let fsmIdStyle = fsmIdStyleOfFsm fsm
                 signpath = case fsmIdStyle of
                                 FsmIdStyleSession => "/" ++ name
-                                _ => "/" ++ name ++ "/${_fsmid}"
+                                _ => "/" ++ name ++ "/$_fsmid"
                 path = "${_self.basePath}" ++ signpath
                 params = case fsmIdStyle of
                               FsmIdStyleSession => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" []), Nothing) :: ("_countdown", (TPrimType PTUInt), Nothing) :: []
@@ -440,10 +440,10 @@ toDart conf fsm
                                , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
-                               , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ signpath ++ "|${_signbody}|${_date}'));"
+                               , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ signpath ++ "|$_signbody|$_date'));"
                                , (indent (indentDelta * 1)) ++ "final _headers = {"
                                , (indent (indentDelta * 2)) ++ "'x-date': _date,"
-                               , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
+                               , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:$_secretValue',"
                                , (indent (indentDelta * 2)) ++ "'x-noise': '${_noise1.toRadixString(16)}${_noise2.toRadixString(16).padLeft(8, '0')}',"
                                , (indent (indentDelta * 2)) ++ "'x-token': _self.accessToken,"
                                , (indent (indentDelta * 1)) ++ "};"
@@ -495,7 +495,7 @@ toDart conf fsm
             generateFetchList pre name (MkState sname _ _ _)
               = let signpath = "/" ++ name ++ "/" ++ sname
                     path = "${_self.basePath}" ++ signpath
-                    query = "limit=${limit}&offset=${offset}" in
+                    query = "limit=$limit&offset=$offset" in
                     List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list")) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, {int offset = 0, int limit = 10}) async {"
                                    , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
@@ -504,10 +504,10 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
-                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ signpath ++ "|${_signbody}|${_date}'));"
+                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ signpath ++ "|$_signbody|$_date'));"
                                    , (indent (indentDelta * 1)) ++ "final _headers = {"
                                    , (indent (indentDelta * 2)) ++ "'x-date': _date,"
-                                   , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
+                                   , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:$_secretValue',"
                                    , (indent (indentDelta * 2)) ++ "'x-noise': '${_noise1.toRadixString(16)}${_noise2.toRadixString(16).padLeft(8, '0')}',"
                                    , (indent (indentDelta * 2)) ++ "'x-token': _self.accessToken,"
                                    , (indent (indentDelta * 1)) ++ "};"
@@ -553,9 +553,9 @@ toDart conf fsm
           where
             generateFetchListByReference : String -> String -> String -> State -> String
             generateFetchListByReference pre name refname (MkState sname _ _ _)
-              = let signpath = "/" ++ refname ++ "/${rid}/" ++ name ++ "/" ++ sname
+              = let signpath = "/" ++ refname ++ "/$rid/" ++ name ++ "/" ++ sname
                     path = "${_self.basePath}" ++ signpath
-                    query = "limit=${limit}&offset=${offset}" in
+                    query = "limit=$limit&offset=$offset" in
                     List.join "\n" [ "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("get-" ++ sname ++ "-"  ++ name ++ "-list-by-" ++ refname)) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, BigInt rid, {int offset = 0, int limit = 10}) async {"
                                    , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
                                    , (indent (indentDelta * 2)) ++ "throw ApiException(403, '会话过期');"
@@ -564,10 +564,10 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
-                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ signpath ++ "|${_signbody}|${_date}'));"
+                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('GET|" ++ signpath ++ "|$_signbody|$_date'));"
                                    , (indent (indentDelta * 1)) ++ "final _headers = {"
                                    , (indent (indentDelta * 2)) ++ "'x-date': _date,"
-                                   , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
+                                   , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:$_secretValue',"
                                    , (indent (indentDelta * 2)) ++ "'x-noise': '${_noise1.toRadixString(16)}${_noise2.toRadixString(16).padLeft(8, '0')}',"
                                    , (indent (indentDelta * 2)) ++ "'x-token': _self.accessToken,"
                                    , (indent (indentDelta * 1)) ++ "};"
@@ -622,7 +622,7 @@ toDart conf fsm
         generateSearch pre name pathPostfix namePostfix
           = let signpath = "/" ++ name ++ "/search" ++ pathPostfix
                 path = "${_self.basePath}" ++ signpath
-                query = "limit=${limit}&offset=${offset}&words=${json.encode(words)}" in
+                query = "limit=$limit&offset=$offset&words=${json.encode(words)}" in
                 List.join "\n" [ "// begin search-" ++ name ++ namePostfix
                                , "Future<Tuple<Tuple<String, String>, Pagination<" ++ pre ++ ">>> _" ++ (toDartName ("search-" ++ name ++ namePostfix)) ++ "(Caller _self, Tuple<String, String> _tokensOption, int _countdown, Map<String, String> words, {int offset = 0, int limit = 10}) async {"
                                , (indent (indentDelta * 1)) ++ "if (_countdown == 0) {"
@@ -633,10 +633,10 @@ toDart conf fsm
                                , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
-                               , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('POST|" ++ signpath ++ "|${_signbody}|${_date}'));"
+                               , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('POST|" ++ signpath ++ "|$_signbody|$_date'));"
                                , (indent (indentDelta * 1)) ++ "final _headers = {"
                                , (indent (indentDelta * 2)) ++ "'x-date': _date,"
-                               , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
+                               , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:$_secretValue',"
                                , (indent (indentDelta * 2)) ++ "'x-noise': '${_noise1.toRadixString(16)}${_noise2.toRadixString(16).padLeft(8, '0')}',"
                                , (indent (indentDelta * 2)) ++ "'x-token': _self.accessToken,"
                                , (indent (indentDelta * 1)) ++ "};"
@@ -704,7 +704,7 @@ toDart conf fsm
                                     FsmIdStyleUrl => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt) , Nothing) :: ("_fsmid", (TPrimType PTULong), Nothing) :: payloadParams
                                     _ => ("_self", (TRecord "Caller" []), Nothing) :: ("_tokensOption", (TRecord "Tuple<String, String>" [], Nothing)) :: ("_countdown", (TPrimType PTUInt), Nothing) :: payloadParams
                     signpath = case fsmIdStyle of
-                                    FsmIdStyleUrl => "/" ++ name ++ "/${_fsmid}/" ++ ename
+                                    FsmIdStyleUrl => "/" ++ name ++ "/$_fsmid/" ++ ename
                                     _ => "/" ++ name ++ "/" ++ ename
                     path = "${_self.basePath}" ++ signpath
                     return = case fsmIdStyle of
@@ -721,10 +721,10 @@ toDart conf fsm
                                    , (indent (indentDelta * 1)) ++ "final _noise1 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _noise2 = _self.rand.nextInt(0xFFFFFFFF);"
                                    , (indent (indentDelta * 1)) ++ "final _date = DateFormat('EEE, dd MMM yyyy HH:mm:ss', 'en_US').format(DateTime.now().toUtc()) + ' GMT';"
-                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('POST|" ++ signpath ++ "|${_signbody}|${_date}'));"
+                                   , (indent (indentDelta * 1)) ++ "final _secretValue = Hmac(sha256, utf8.encode(_self.appkey)).convert(utf8.encode('POST|" ++ signpath ++ "|$_signbody|$_date'));"
                                    , (indent (indentDelta * 1)) ++ "final _headers = {"
                                    , (indent (indentDelta * 2)) ++ "'x-date': _date,"
-                                   , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:${_secretValue}',"
+                                   , (indent (indentDelta * 2)) ++ "'Authorization': '${_self.appid}:$_secretValue',"
                                    , (indent (indentDelta * 2)) ++ "'x-noise': '${_noise1.toRadixString(16)}${_noise2.toRadixString(16).padLeft(8, '0')}',"
                                    , (indent (indentDelta * 2)) ++ "'x-token': _self.accessToken,"
                                    , (indent (indentDelta * 1)) ++ "};"
