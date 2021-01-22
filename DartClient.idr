@@ -158,6 +158,27 @@ toDartJson n (TDict _ _)                 = (toDartName n)
 toDartJson n (TRecord _ _)               = (toDartName n) ++ ".toJson()"
 toDartJson n (TArrow _ _)                = (toDartName n) ++ ".toJson()"
 
+defaultDartPrimValue : PrimType -> String
+defaultDartPrimValue PTBool   = "false"
+defaultDartPrimValue PTByte   = "0"
+defaultDartPrimValue PTChar   = "''"
+defaultDartPrimValue PTShort  = "0"
+defaultDartPrimValue PTUShort = "0"
+defaultDartPrimValue PTInt    = "0"
+defaultDartPrimValue PTUInt   = "0"
+defaultDartPrimValue PTLong   = "BigInt.zero"
+defaultDartPrimValue PTULong  = "BigInt.zero"
+defaultDartPrimValue PTReal   = "0.0"
+defaultDartPrimValue PTString = "''"
+
+defaultDartValue : Tipe -> String
+defaultDartValue TUnit         = "void"
+defaultDartValue (TPrimType t) = defaultDartPrimValue t
+defaultDartValue (TList _)     = "[]"
+defaultDartValue (TDict _ _)   = "{}"
+defaultDartValue (TRecord n _) = "null"
+defaultDartValue (TArrow _ _)  = "null"
+
 fromJson : String -> Tipe -> String
 fromJson src t
   = fromJson' src t Z
@@ -329,16 +350,16 @@ toDart conf fsm
             generateParsingFromJson : Nat -> Parameter -> String
             generateParsingFromJson idt (n, (TList t), ms)
               = case lookup "reference" ms of
-                     Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = List<BigInt>.from(node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (fromJson "i['fsmid']" t) ++ "));"
-                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = List<" ++ (camelize ref) ++ ">.from(node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(i)));"
+                     Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node.containsKey('" ++ n ++ "')? List<BigInt>.from(node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (fromJson "i['fsmid']" t) ++ ")): List<BigInt>.empty();"
+                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = node.containsKey('" ++ n ++ "')? List<" ++ (camelize ref) ++ ">.from(node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(i))): List<" ++ (camelize ref) ++ ">.empty();"
                                                            ]
-                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") (TList t)) ++ ";"
+                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = node.containsKey('" ++ n ++ "')? " ++ (fromJson ("node['" ++ n ++ "']") (TList t)) ++ ": List<" ++ (toDartType t) ++ ">.empty();"
             generateParsingFromJson idt (n, t, ms)
               = case lookup "reference" ms of
-                     Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'] == '0'? BigInt.zero: " ++ (fromJson ("node['" ++ n ++ "']['fsmid']") t) ++ ";"
-                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = node['" ++ n ++ "'] == '0'? null: " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(node['" ++ n ++ "']);"
+                     Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node.containsKey('" ++ n ++ "') && node['" ++ n ++ "'] != '0'? " ++ (fromJson ("node['" ++ n ++ "']['fsmid']") t) ++ ": BigInt.zero;"
+                                                           , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = node.containsKey('" ++ n ++ "') && node['" ++ n ++ "'] != '0'? " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(node['" ++ n ++ "']): null;"
                                                            ]
-                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
+                     _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = node.containsKey('" ++ n ++ "')? " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ": " ++ (defaultDartValue t) ++ ";"
 
             generateInitialingObject : Parameter -> String
             generateInitialingObject (n, (TList _), ms)
@@ -370,16 +391,16 @@ toDart conf fsm
                 generateParsingFromJson : Nat -> Parameter -> String
                 generateParsingFromJson idt (n, (TList t), ms)
                   = case lookup "reference" ms of
-                         Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (fromJson "i['fsmid']" t) ++ ").toList();"
-                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = (node['" ++ n ++ "']).where((i) => i != '0').map((i) => " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(i)).toList();"
+                         Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node.containsKey('" ++ n ++ "')? node['" ++ n ++ "'].where((i) => i != '0').map((i) => " ++ (fromJson "i['fsmid']" t) ++ ").toList(): List<BigInt>.empty();"
+                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-refs")) ++ " = node.containsKey('" ++ n ++"')? (node['" ++ n ++ "']).where((i) => i != '0').map((i) => " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(i)).toList(): null;"
                                                                ]
-                         _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'].map((i) => " ++ (fromJson "i" t) ++ ");"
+                         _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = node.containsKey('" ++ n ++ "')? node['" ++ n ++ "'].map((i) => " ++ (fromJson "i" t) ++ "): List<" ++ (toDartType t) ++ ">.empty();"
                 generateParsingFromJson idt (n, t, ms)
                   = case lookup "reference" ms of
-                         Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node['" ++ n ++ "'] == '0'? BigInt.zero: " ++ (fromJson ("node['" ++ n ++ "']['fsmid']") t) ++ ";"
-                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = node['" ++ n ++ "'] == '0'? null: " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(node['" ++ n ++ "']);"
+                         Just (MVString ref) => List.join "\n" [ (indent idt) ++ "final " ++ (toDartName n) ++ " = node.containsKey('" ++ n ++ "') && node['" ++ n ++ "'] != '0'? " ++ (fromJson ("node['" ++ n ++ "']['fsmid']") t) ++ ": BigInt.zero;"
+                                                               , (indent idt) ++ "final " ++ (toDartName (n ++ "-ref")) ++ " = node.containsKey('" ++ n ++ "') && node['" ++ n ++ "'] != '0'? " ++ (toDartName ("get-" ++ (camelize $ toDartName ref) ++ "-from-json")) ++ "(node['" ++ n ++ "']): null;"
                                                                ]
-                         _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ";"
+                         _ => (indent idt) ++ "final " ++ (toDartName n) ++ " = node.containsKey('" ++ n ++ "')? " ++ (fromJson ("node['" ++ n ++ "']") t) ++ ": " ++ (defaultDartValue t) ++ ";"
 
                 generateInitialingObject : Parameter -> String
                 generateInitialingObject (n, (TList _), metas)
